@@ -151,6 +151,9 @@ try {
     console.log('Starting with empty config');
 }
 
+// Remove invalid top-level 'workspace' key if persisted from a bad config patch
+delete config.workspace;
+
 config.gateway = config.gateway || {};
 config.channels = config.channels || {};
 
