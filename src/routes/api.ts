@@ -295,6 +295,61 @@ adminApi.post('/gateway/restart', async (c) => {
   }
 });
 
+// POST /api/leads - Save a lead to the D1 database
+api.post('/leads', async (c) => {
+  try {
+    const data = await c.req.json();
+
+    const stmt = c.env.DB.prepare(`
+      INSERT OR IGNORE INTO leads (
+        id,
+        domain,
+        business_name,
+        website,
+        phone,
+        email,
+        city,
+        state,
+        category,
+        owner_people,
+        linkedin_company,
+        linkedin_people,
+        match_score,
+        notes,
+        source_urls,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    await stmt
+      .bind(
+        crypto.randomUUID(),
+        data.domain ?? null,
+        data.business_name ?? null,
+        data.website ?? null,
+        data.phone ?? null,
+        data.email ?? null,
+        data.city ?? null,
+        data.state ?? null,
+        data.category ?? null,
+        data.owner_people ?? null,
+        data.linkedin_company ?? null,
+        data.linkedin_people ?? null,
+        data.match_score ?? null,
+        data.notes ?? null,
+        JSON.stringify(data.source_urls || []),
+        new Date().toISOString(),
+      )
+      .run();
+
+    return c.json({ ok: true });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[leads] Failed to save lead:', errorMessage);
+    return c.json({ error: errorMessage }, 500);
+  }
+});
+
 // Mount admin API routes under /admin
 api.route('/admin', adminApi);
 

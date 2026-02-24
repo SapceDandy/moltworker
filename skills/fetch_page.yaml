@@ -1,0 +1,12 @@
+name: fetch_page
+description: Fetch the raw HTML/text for a URL.
+type: http
+
+request:
+  method: GET
+  url: "{{url}}"
+  headers:
+    User-Agent: "Mozilla/5.0 (compatible; ResearchBot/1.0; +https://example.com)"
+
+response:
+  type: text
