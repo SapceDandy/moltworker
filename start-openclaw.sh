@@ -222,6 +222,18 @@ if (process.env.CF_AI_GATEWAY_MODEL) {
     }
 }
 
+// Agent workspace (OpenClaw loads skills from <workspace>/skills/)
+config.agents = config.agents || {};
+config.agents.defaults = config.agents.defaults || {};
+config.agents.defaults.workspace = '/root/clawd';
+
+// Skills: enable all bundled skills, watch for changes
+config.skills = config.skills || {};
+config.skills.allowBundled = config.skills.allowBundled || ['*'];
+config.skills.load = config.skills.load || {};
+config.skills.load.watch = true;
+console.log('Skills: workspace=/root/clawd/skills, allowBundled=' + JSON.stringify(config.skills.allowBundled));
+
 // Telegram configuration
 // Overwrite entire channel object to drop stale keys from old R2 backups
 // that would fail OpenClaw's strict config validation (see #47)
