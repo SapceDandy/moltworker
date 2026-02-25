@@ -42,6 +42,7 @@ export interface MoltbotEnv {
   BROWSER?: Fetcher;
   CDP_SECRET?: string; // Shared secret for CDP endpoint authentication
   WORKER_URL?: string; // Public URL of the worker (for CDP endpoint)
+  TAVILY_API_KEY?: string; // Tavily search API key (passed to container for search skill)
   DB: D1Database; // D1 database for leads and other data
 }
 
