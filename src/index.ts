@@ -446,4 +446,19 @@ app.all('*', async (c) => {
 
 export default {
   fetch: app.fetch,
+  async scheduled(event: ScheduledEvent, env: MoltbotEnv, ctx: ExecutionContext) {
+    console.log('[CRON] Keep-warm ping at', new Date(event.scheduledTime).toISOString());
+    try {
+      const options = buildSandboxOptions(env);
+      const sandbox = getSandbox(env.Sandbox, 'moltbot', options);
+      await ensureMoltbotGateway(sandbox, env);
+      const healthResp = await sandbox.containerFetch(
+        new Request('http://localhost/health'),
+        MOLTBOT_PORT,
+      );
+      console.log('[CRON] Gateway health:', healthResp.status);
+    } catch (err) {
+      console.error('[CRON] Keep-warm failed:', err);
+    }
+  },
 };
