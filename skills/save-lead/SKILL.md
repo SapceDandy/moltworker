@@ -1,15 +1,25 @@
 ---
 name: save-lead
 description: Save or update a lead in the database. Upserts by domain so duplicate domains are merged automatically.
+type: http
+request:
+  method: POST
+  url: "{{BASE_URL}}/api/leads"
+  headers:
+    Content-Type: application/json
+    Authorization: "Bearer ${MOLTBOT_GATEWAY_TOKEN}"
+  body: "{{lead_json}}"
+response:
+  type: json
 ---
 
 # Save Lead
 
-Save a business lead to the D1 database. If a lead with the same domain already exists, it will be updated with the new data.
+Save a business lead to the D1 database. Upserts by domain — duplicates are merged.
 
 ## Usage
 
-Provide lead data as JSON. At minimum, `domain` or `website` is required. All other fields are optional.
+Provide lead data as JSON. At minimum, `domain` or `website` is required.
 
 ## Fields
 
@@ -25,7 +35,7 @@ Provide lead data as JSON. At minimum, `domain` or `website` is required. All ot
 | `category` | string | Business category |
 | `owner_or_people` | string | Owner or key people |
 | `linkedin_company` | string | LinkedIn company URL |
-| `linkedin_people` | string/array | LinkedIn profile URLs for key people |
+| `linkedin_people` | string/array | LinkedIn profile URLs |
 | `contact_page_url` | string | URL of the contact page |
 | `source_urls` | string/array | URLs where lead was found |
 | `evidence_snippet` | string | Text snippet supporting the match |
@@ -34,22 +44,10 @@ Provide lead data as JSON. At minimum, `domain` or `website` is required. All ot
 
 ## Example
 
-```json
-{
-  "domain": "example.com",
-  "business_name": "Example Corp",
-  "website": "https://example.com",
-  "email": "info@example.com",
-  "city": "Austin",
-  "state": "TX",
-  "category": "SaaS",
-  "match_score": 85
-}
+```
+save-lead lead_json={"domain":"example.com","business_name":"Example Corp","email":"info@example.com","city":"Austin","state":"TX","match_score":85}
 ```
 
-## Request Details
+## Response
 
-- **Method**: POST
-- **URL**: `{{BASE_URL}}/api/leads`
-- **Auth**: Bearer token via `MOLTBOT_GATEWAY_TOKEN`
-- **Response**: `{ "ok": true, "domain": "example.com" }`
+`{ "ok": true, "domain": "example.com" }`

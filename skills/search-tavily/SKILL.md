@@ -1,39 +1,36 @@
 ---
 name: search-tavily
-description: Search the web using Tavily and return results with URLs/snippets.
+description: Search the web using Tavily and return results with URLs/snippets. Use this for all web searches instead of browser automation.
+type: http
+request:
+  method: POST
+  url: https://api.tavily.com/search
+  headers:
+    Content-Type: application/json
+  body:
+    api_key: "${TAVILY_API_KEY}"
+    query: "{{query}}"
+    search_depth: "basic"
+    max_results: 10
+    include_answer: false
+    include_images: false
+response:
+  type: json
 ---
 
 # Tavily Web Search
 
-Search the web using the Tavily API. Returns relevant URLs and text snippets for a given query.
+Use this skill for ALL web searches. Do NOT use browser automation for searching.
 
 ## Usage
 
-Provide a `query` string. The skill will POST to the Tavily search API and return JSON results.
+Provide a `query` string. Returns JSON with URLs and text snippets.
+
+## Examples
+
+- `search-tavily query="best CRM software for small business"`
+- `search-tavily query="site:linkedin.com company CEO Austin TX"`
 
 ## Configuration
 
-Requires the `TAVILY_API_KEY` environment variable to be set.
-
-## Example
-
-```
-Search for "best CRM software for small business"
-```
-
-## Request Details
-
-- **Method**: POST
-- **URL**: `https://api.tavily.com/search`
-- **Body**:
-  ```json
-  {
-    "api_key": "${TAVILY_API_KEY}",
-    "query": "{{query}}",
-    "search_depth": "basic",
-    "max_results": 10,
-    "include_answer": false,
-    "include_images": false
-  }
-  ```
-- **Response**: JSON with search results
+Requires the `TAVILY_API_KEY` environment variable.
