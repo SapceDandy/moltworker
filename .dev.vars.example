@@ -37,6 +37,20 @@ MOLTBOT_GATEWAY_TOKEN=dev-token-change-in-prod
 # TELEGRAM_BOT_TOKEN=optional
 # DISCORD_BOT_TOKEN=optional
 
+# Worker public URL — used by OpenClaw skills to call back to the Worker API
+# Required for executive assistant (project-manager, daily-brief skills)
+# WORKER_URL=https://your-worker.example.com
+
+# Google OAuth — connect Calendar (read-write), Tasks, Gmail (read-only)
+# Create credentials at https://console.cloud.google.com/apis/credentials
+# Enable: Google Calendar API, Google Tasks API, Gmail API
+# Set redirect URI: ${WORKER_URL}/api/google/callback
+# GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+# GOOGLE_CLIENT_SECRET=GOCSPX-...
+
+# Token encryption key — used to encrypt Google OAuth tokens at rest in D1
+# Generate with: openssl rand -hex 32
+# TOKEN_ENCRYPTION_KEY=your-64-char-hex-key
+
 # CDP (Chrome DevTools Protocol) configuration for browser automation
 # CDP_SECRET=shared-secret-for-cdp-auth
-# WORKER_URL=https://your-worker.example.com

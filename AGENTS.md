@@ -9,6 +9,7 @@ This is a Cloudflare Worker that runs [OpenClaw](https://github.com/openclaw/ope
 - Admin UI at `/_admin/` for device management
 - API endpoints at `/api/*` for device pairing
 - Debug endpoints at `/debug/*` for troubleshooting
+- **Executive assistant** ("Kudjo"): D1-backed project/task/goal management with cron-driven daily briefs, evening recaps, and weekly reviews
 
 **Note:** The CLI tool and npm package are now named `openclaw`. Config files use `.openclaw/openclaw.json`. Legacy `.clawdbot` paths are supported for backward compatibility during transition.
 
@@ -30,13 +31,37 @@ src/
 │   ├── sync.ts       # R2 backup sync logic
 │   └── utils.ts      # Shared utilities (waitForProcess)
 ├── routes/           # API route handlers
-│   ├── api.ts        # /api/* endpoints (devices, gateway)
+│   ├── api.ts        # /api/* endpoints (devices, gateway, exec assistant)
+│   ├── projects.ts   # /api/projects CRUD
+│   ├── tasks.ts      # /api/tasks CRUD
+│   ├── goals.ts      # /api/goals + /api/milestones CRUD
+│   ├── checkins.ts   # /api/checkins + /api/blockers CRUD
+│   ├── reminders.ts  # /api/reminders CRUD
+│   ├── dashboard.ts  # /api/dashboard aggregate + snapshot
+│   ├── agent-logs.ts # /api/agent-logs read-only query
 │   ├── admin.ts      # /_admin/* static file serving
 │   └── debug.ts      # /debug/* endpoints
+├── cron/             # Scheduled event handlers
+│   ├── index.ts      # Cron dispatch by expression
+│   ├── morning-brief.ts  # 7am CT weekdays
+│   ├── evening-recap.ts  # 5pm CT weekdays
+│   ├── weekly-review.ts  # 5pm CT Sunday
+│   └── keep-warm.ts      # Every 5 min sandbox ping
 └── client/           # React admin UI (Vite)
     ├── App.tsx
     ├── api.ts        # API client
     └── pages/
+skills/               # OpenClaw skill definitions (copied into container)
+├── project-manager/  # CRUD for projects, tasks, goals, milestones, blockers, reminders
+├── daily-brief/      # Fetch aggregated dashboard data
+├── save-lead/        # Upsert lead to D1
+└── fetch-page/       # Fetch any URL
+workspace/            # OpenClaw bootstrap files (copied into container)
+├── SOUL.md           # Agent personality, rules, daily rhythms
+└── USER.md           # Owner profile and preferences
+migrations/           # D1 schema migrations
+├── 0001_leads.sql
+└── 0002_executive_assistant.sql
 ```
 
 ## Key Patterns
@@ -87,6 +112,16 @@ Current test coverage:
 - `gateway/process.test.ts` - Process finding logic
 - `gateway/r2.test.ts` - R2 mounting logic
 - `gateway/sync.test.ts` - R2 backup sync logic
+- `routes/projects.test.ts` - Projects CRUD + filtering
+- `routes/tasks.test.ts` - Tasks CRUD + filtering
+- `routes/goals.test.ts` - Goals + milestones CRUD
+- `routes/checkins.test.ts` - Check-ins + blockers CRUD
+- `routes/reminders.test.ts` - Reminders CRUD
+- `routes/dashboard.test.ts` - Dashboard summary + snapshot
+- `routes/agent-logs.test.ts` - Agent logs query
+- `cron/index.test.ts` - Cron dispatch routing
+
+Route tests use `app.request(path, init, env)` with a `req()` helper. An in-memory D1 mock (`src/test-utils-d1.ts`) simulates basic SQL.
 
 When adding new functionality, add corresponding tests.
 
@@ -201,6 +236,8 @@ These are the env vars passed TO the container (internal names):
 | `CF_AI_GATEWAY_ACCOUNT_ID` | (env var) | Account ID for AI Gateway |
 | `CF_AI_GATEWAY_GATEWAY_ID` | (env var) | Gateway ID for AI Gateway |
 | `OPENCLAW_GATEWAY_TOKEN` | `--token` flag | Mapped from `MOLTBOT_GATEWAY_TOKEN` |
+| `MOLTBOT_GATEWAY_TOKEN` | (env var) | Also passed as-is for skill Bearer auth |
+| `WORKER_URL` | (env var) | Public Worker URL for skill HTTP callbacks |
 | `OPENCLAW_DEV_MODE` | `controlUi.allowInsecureAuth` | Mapped from `DEV_MODE` |
 | `TELEGRAM_BOT_TOKEN` | `channels.telegram.botToken` | |
 | `DISCORD_BOT_TOKEN` | `channels.discord.token` | |
@@ -217,6 +254,75 @@ OpenClaw has strict config validation. Common gotchas:
 - `gateway.bind` is not a config option - use `--bind` CLI flag
 
 See [OpenClaw docs](https://docs.openclaw.ai/) for full schema.
+
+## Executive Assistant Architecture
+
+### Data Flow
+
+```
+Cron trigger (Cloudflare)
+   │
+   ▼
+handleScheduled() ──► morningBrief() / eveningRecap() / weeklyReview()
+   │                      │
+   │  1. Query D1 ◄───────┘
+   │  2. Take snapshot (INSERT progress_snapshots)
+   │  3. sendSessionMessage() ──► POST /v1/chat/completions on container
+   │                                    │
+   │                                    ▼
+   │                              OpenClaw agent reads message,
+   │                              uses skills to call back:
+   │                                    │
+   │                              GET/POST ${WORKER_URL}/api/*
+   │                              Authorization: Bearer ${MOLTBOT_GATEWAY_TOKEN}
+   │                                    │
+   │                                    ▼
+   │                              Worker auth middleware:
+   │                              Bearer token bypass for /api/*
+   │                              (skips CF Access, sets agent@internal)
+   │                                    │
+   │                                    ▼
+   └──────────────────────────────────► D1 Database
+```
+
+### Auth: Agent → Worker API
+
+The container agent calls back to the Worker's `/api/*` routes using Bearer token auth.
+The middleware in `src/index.ts` checks `Authorization: Bearer <token>` against `MOLTBOT_GATEWAY_TOKEN`
+and bypasses CF Access for matching requests. This is scoped to `/api/*` paths only.
+
+### RPC: Worker → Agent
+
+`sendSessionMessage()` in `src/gateway/rpc.ts` sends messages to OpenClaw via the
+OpenAI-compatible `/v1/chat/completions` HTTP endpoint (enabled in `start-openclaw.sh` config patch).
+Uses `x-openclaw-session-key: cron-system` so all cron messages share one session.
+
+### Cron Schedules (wrangler.jsonc)
+
+| Cron | UTC | CT (UTC-6) | Handler |
+|------|-----|------------|----------|
+| `*/5 * * * *` | Every 5 min | Every 5 min | `keepWarm` |
+| `0 13 * * 1-5` | 1:00 PM | 7:00 AM | `morningBrief` |
+| `0 23 * * 1-5` | 11:00 PM | 5:00 PM | `eveningRecap` |
+| `0 23 * * 7` | 11:00 PM Sun | 5:00 PM Sun | `weeklyReview` |
+
+### D1 Tables (migration 0002)
+
+`projects`, `goals`, `milestones`, `tasks`, `blockers`, `daily_checkins`, `reminders`, `progress_snapshots`, `agent_logs`
+
+### Skills
+
+Skills use `${WORKER_URL}` (env var) for the base URL and `${MOLTBOT_GATEWAY_TOKEN}` for Bearer auth.
+The `${}` syntax is resolved from container environment variables at skill execution time.
+`{{param}}` syntax is for agent-provided parameters at invocation time.
+
+### Adding a New Executive Assistant Endpoint
+
+1. Add route handler in `src/routes/<resource>.ts`
+2. Add tests in `src/routes/<resource>.test.ts` using the `req()` helper pattern
+3. Import and mount in `src/routes/api.ts`
+4. Document in `skills/project-manager/SKILL.md`
+5. If the cron handlers need the data, update the relevant handler in `src/cron/`
 
 ## Common Tasks
 

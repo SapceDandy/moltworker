@@ -7,7 +7,7 @@
 
 .app-header {
   background-color: var(--surface-color);
-  padding: 1rem 2rem;
+  padding: 0.75rem 2rem;
   border-bottom: 1px solid var(--border-color);
   box-shadow: var(--shadow);
   display: flex;
@@ -16,14 +16,43 @@
 }
 
 .header-logo {
-  height: 36px;
+  height: 32px;
   width: auto;
 }
 
 .app-header h1 {
-  font-size: 1.5rem;
+  font-size: 1.25rem;
   font-weight: 600;
   color: var(--text-primary);
+  margin-right: 0.5rem;
+}
+
+/* Navigation */
+.app-nav {
+  display: flex;
+  gap: 0.25rem;
+  margin-left: auto;
+}
+
+.nav-link {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-decoration: none;
+  border-radius: 6px;
+  transition: all 0.15s;
+}
+
+.nav-link:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+  text-decoration: none;
+}
+
+.nav-link.active {
+  color: var(--primary-color);
+  background: rgba(233, 69, 96, 0.1);
 }
 
 .app-main {
@@ -37,7 +66,20 @@
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .app-header {
-    padding: 1rem;
+    padding: 0.75rem 1rem;
+    flex-wrap: wrap;
+  }
+
+  .app-nav {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .nav-link {
+    white-space: nowrap;
+    font-size: 0.75rem;
+    padding: 0.375rem 0.5rem;
   }
 
   .app-main {

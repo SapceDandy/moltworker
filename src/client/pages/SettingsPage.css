@@ -1,0 +1,210 @@
+.settings-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.settings-page h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+/* Status Banners */
+.success-banner {
+  background: rgba(74, 222, 128, 0.15);
+  border: 1px solid var(--success-color);
+  color: var(--success-color);
+  padding: 0.75rem 1rem;
+  border-radius: var(--border-radius);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+/* Settings Section */
+.settings-section {
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.section-header h3 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin: 0 0 0.25rem;
+}
+
+.section-desc {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Account Cards */
+.accounts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.account-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1rem;
+  background: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.account-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.account-primary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.account-email {
+  font-weight: 600;
+  font-size: 0.9375rem;
+}
+
+.account-label {
+  font-size: 0.7rem;
+  padding: 0.125rem 0.4rem;
+  border-radius: 4px;
+  background: rgba(167, 139, 250, 0.2);
+  color: #a78bfa;
+  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.token-status {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.125rem 0.4rem;
+  border-radius: 4px;
+}
+
+.token-status.valid {
+  background: rgba(74, 222, 128, 0.2);
+  color: var(--success-color);
+}
+
+.token-status.expired {
+  background: rgba(239, 68, 68, 0.2);
+  color: var(--error-color);
+}
+
+.account-scopes {
+  display: flex;
+  gap: 0.375rem;
+  flex-wrap: wrap;
+}
+
+.scope-tag {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+}
+
+.account-meta {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.account-actions {
+  display: flex;
+  gap: 0.375rem;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+/* Connect Section */
+.connect-section {
+  padding-top: 0.5rem;
+}
+
+.connect-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-width: 400px;
+}
+
+.connect-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.connect-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* Info Section */
+.info-section {
+  border: 1px dashed var(--border-color);
+  background: transparent;
+}
+
+.info-section h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.info-card {
+  padding: 1rem;
+  border-radius: 8px;
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+}
+
+.info-card h4 {
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin: 0 0 0.375rem;
+  color: var(--primary-color);
+}
+
+.info-card p {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.4;
+}
+
+@media (max-width: 640px) {
+  .account-card {
+    flex-direction: column;
+  }
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
+}

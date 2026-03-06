@@ -7,6 +7,14 @@ import {
   syncToR2,
   waitForProcess,
 } from '../gateway';
+import { projects } from './projects';
+import { tasks } from './tasks';
+import { goals, milestones } from './goals';
+import { checkins, blockers } from './checkins';
+import { dashboard } from './dashboard';
+import { reminders } from './reminders';
+import { agentLogs } from './agent-logs';
+import { google } from './google';
 
 // CLI commands can take 10-15 seconds to complete due to WebSocket connection overhead
 const CLI_TIMEOUT_MS = 20000;
@@ -473,5 +481,17 @@ api.get('/export.csv', async (c) => {
 
 // Mount admin API routes under /admin
 api.route('/admin', adminApi);
+
+// Mount executive assistant routes
+api.route('/projects', projects);
+api.route('/tasks', tasks);
+api.route('/goals', goals);
+api.route('/milestones', milestones);
+api.route('/checkins', checkins);
+api.route('/blockers', blockers);
+api.route('/dashboard', dashboard);
+api.route('/reminders', reminders);
+api.route('/agent-logs', agentLogs);
+api.route('/google', google);
 
 export { api };

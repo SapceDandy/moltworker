@@ -31,6 +31,7 @@ import { publicRoutes, api, adminUi, debug, cdp } from './routes';
 import { redactSensitiveParams } from './utils/logging';
 import loadingPageHtml from './assets/loading.html';
 import configErrorHtml from './assets/config-error.html';
+import { handleScheduled } from './cron';
 
 /**
  * Transform error messages from the gateway to be more user-friendly.
@@ -196,7 +197,25 @@ app.use('*', async (c, next) => {
 });
 
 // Middleware: Cloudflare Access authentication for protected routes
+// Agent token bypass: requests to /api/* with a valid Bearer token matching
+// MOLTBOT_GATEWAY_TOKEN skip CF Access. This allows the OpenClaw agent inside
+// the container to call back to the Worker's D1-backed API routes.
 app.use('*', async (c, next) => {
+  const url = new URL(c.req.url);
+  const authHeader = c.req.header('Authorization');
+
+  if (
+    url.pathname.startsWith('/api/') &&
+    authHeader?.startsWith('Bearer ') &&
+    c.env.MOLTBOT_GATEWAY_TOKEN
+  ) {
+    const token = authHeader.slice(7);
+    if (token === c.env.MOLTBOT_GATEWAY_TOKEN) {
+      c.set('accessUser', { email: 'agent@internal', name: 'OpenClaw Agent' });
+      return next();
+    }
+  }
+
   // Determine response type based on Accept header
   const acceptsHtml = c.req.header('Accept')?.includes('text/html');
   const middleware = createAccessMiddleware({
@@ -447,18 +466,6 @@ app.all('*', async (c) => {
 export default {
   fetch: app.fetch,
   async scheduled(event: ScheduledEvent, env: MoltbotEnv, ctx: ExecutionContext) {
-    console.log('[CRON] Keep-warm ping at', new Date(event.scheduledTime).toISOString());
-    try {
-      const options = buildSandboxOptions(env);
-      const sandbox = getSandbox(env.Sandbox, 'moltbot', options);
-      await ensureMoltbotGateway(sandbox, env);
-      const healthResp = await sandbox.containerFetch(
-        new Request('http://localhost/health'),
-        MOLTBOT_PORT,
-      );
-      console.log('[CRON] Gateway health:', healthResp.status);
-    } catch (err) {
-      console.error('[CRON] Keep-warm failed:', err);
-    }
+    ctx.waitUntil(handleScheduled(event, env));
   },
 };

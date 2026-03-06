@@ -43,6 +43,10 @@ export interface MoltbotEnv {
   CDP_SECRET?: string; // Shared secret for CDP endpoint authentication
   WORKER_URL?: string; // Public URL of the worker (for CDP endpoint)
   TAVILY_API_KEY?: string; // Tavily search API key (passed to container for search skill)
+  // Google OAuth configuration
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  TOKEN_ENCRYPTION_KEY?: string; // 32-byte hex key for AES-GCM encryption of OAuth tokens
   DB: D1Database; // D1 database for leads and other data
 }
 

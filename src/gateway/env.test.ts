@@ -95,10 +95,11 @@ describe('buildEnvVars', () => {
   });
 
   // Gateway token mapping
-  it('maps MOLTBOT_GATEWAY_TOKEN to OPENCLAW_GATEWAY_TOKEN for container', () => {
+  it('maps MOLTBOT_GATEWAY_TOKEN to OPENCLAW_GATEWAY_TOKEN and passes as MOLTBOT_GATEWAY_TOKEN', () => {
     const env = createMockEnv({ MOLTBOT_GATEWAY_TOKEN: 'my-token' });
     const result = buildEnvVars(env);
     expect(result.OPENCLAW_GATEWAY_TOKEN).toBe('my-token');
+    expect(result.MOLTBOT_GATEWAY_TOKEN).toBe('my-token');
   });
 
   // Channel tokens
@@ -155,6 +156,7 @@ describe('buildEnvVars', () => {
     expect(result).toEqual({
       ANTHROPIC_API_KEY: 'sk-key',
       OPENCLAW_GATEWAY_TOKEN: 'token',
+      MOLTBOT_GATEWAY_TOKEN: 'token',
       TELEGRAM_BOT_TOKEN: 'tg',
     });
   });

@@ -4,7 +4,7 @@ description: Save or update a lead in the database. Upserts by domain so duplica
 type: http
 request:
   method: POST
-  url: "{{BASE_URL}}/api/leads"
+  url: "${WORKER_URL}/api/leads"
   headers:
     Content-Type: application/json
     Authorization: "Bearer ${MOLTBOT_GATEWAY_TOKEN}"
