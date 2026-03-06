@@ -19,6 +19,19 @@ import { google } from './google';
 // CLI commands can take 10-15 seconds to complete due to WebSocket connection overhead
 const CLI_TIMEOUT_MS = 20000;
 
+// Hard timeout for admin API sandbox interactions (prevents infinite hangs)
+const ADMIN_GATEWAY_TIMEOUT_MS = 15000;
+const ADMIN_EXEC_TIMEOUT_MS = 5000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    ),
+  ]);
+}
+
 /**
  * Normalize a domain string: extract hostname, strip www., lowercase.
  */
@@ -62,15 +75,19 @@ adminApi.get('/devices', async (c) => {
   const sandbox = c.get('sandbox');
 
   try {
-    // Ensure moltbot is running first
-    await ensureMoltbotGateway(sandbox, c.env);
+    // Ensure moltbot is running first (with timeout to prevent infinite hang)
+    await withTimeout(ensureMoltbotGateway(sandbox, c.env), ADMIN_GATEWAY_TIMEOUT_MS, 'Gateway startup');
 
     // Run OpenClaw CLI to list devices
     // Must specify --url and --token (OpenClaw v2026.2.3 requires explicit credentials with --url)
     const token = c.env.MOLTBOT_GATEWAY_TOKEN;
     const tokenArg = token ? ` --token ${token}` : '';
-    const proc = await sandbox.startProcess(
-      `openclaw devices list --json --url ws://localhost:18789${tokenArg}`,
+    const proc = await withTimeout(
+      sandbox.startProcess(
+        `openclaw devices list --json --url ws://localhost:18789${tokenArg}`,
+      ),
+      ADMIN_EXEC_TIMEOUT_MS,
+      'Start CLI process',
     );
     await waitForProcess(proc, CLI_TIMEOUT_MS);
 
@@ -119,8 +136,8 @@ adminApi.post('/devices/:requestId/approve', async (c) => {
   }
 
   try {
-    // Ensure moltbot is running first
-    await ensureMoltbotGateway(sandbox, c.env);
+    // Ensure moltbot is running first (with timeout)
+    await withTimeout(ensureMoltbotGateway(sandbox, c.env), ADMIN_GATEWAY_TIMEOUT_MS, 'Gateway startup');
 
     // Run OpenClaw CLI to approve the device
     const token = c.env.MOLTBOT_GATEWAY_TOKEN;
@@ -155,8 +172,8 @@ adminApi.post('/devices/approve-all', async (c) => {
   const sandbox = c.get('sandbox');
 
   try {
-    // Ensure moltbot is running first
-    await ensureMoltbotGateway(sandbox, c.env);
+    // Ensure moltbot is running first (with timeout)
+    await withTimeout(ensureMoltbotGateway(sandbox, c.env), ADMIN_GATEWAY_TIMEOUT_MS, 'Gateway startup');
 
     // First, get the list of pending devices
     const token = c.env.MOLTBOT_GATEWAY_TOKEN;
@@ -242,13 +259,17 @@ adminApi.get('/storage', async (c) => {
 
   if (hasCredentials) {
     try {
-      const result = await sandbox.exec('cat /tmp/.last-sync 2>/dev/null || echo ""');
+      const result = await withTimeout(
+        sandbox.exec('cat /tmp/.last-sync 2>/dev/null || echo ""'),
+        ADMIN_EXEC_TIMEOUT_MS,
+        'Storage status check',
+      );
       const timestamp = result.stdout?.trim();
       if (timestamp && timestamp !== '') {
         lastSync = timestamp;
       }
     } catch {
-      // Ignore errors checking sync status
+      // Ignore errors checking sync status (includes timeouts)
     }
   }
 
@@ -292,8 +313,12 @@ adminApi.post('/gateway/restart', async (c) => {
   const sandbox = c.get('sandbox');
 
   try {
-    // Find and kill the existing gateway process
-    const existingProcess = await findExistingMoltbotProcess(sandbox);
+    // Find and kill the existing gateway process (with timeout)
+    const existingProcess = await withTimeout(
+      findExistingMoltbotProcess(sandbox),
+      ADMIN_EXEC_TIMEOUT_MS,
+      'Process lookup',
+    );
 
     if (existingProcess) {
       console.log('Killing existing gateway process:', existingProcess.id);
