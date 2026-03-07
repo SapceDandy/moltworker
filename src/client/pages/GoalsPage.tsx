@@ -203,20 +203,20 @@ export default function GoalsPage() {
                 </div>
 
                 {g.description && <p className="goal-card-desc">{g.description}</p>}
-
                 {g.metric && (
                   <div className="goal-metric-row">
                     <span className="metric-label">{g.metric}</span>
                     <span className="metric-values">{g.current_value ?? '0'} / {g.target_value ?? '?'}</span>
                     {pct != null && (
                       <div className="metric-bar-wrap">
-                        <div className="metric-bar" style={{ width: `${pct}%` }} />
+                        <div className="metric-bar-track">
+                          <div className="metric-bar" style={{ width: `${pct}%` }} />
+                        </div>
                         <span className="metric-pct">{pct}%</span>
                       </div>
                     )}
                   </div>
                 )}
-
                 {g.target_date && <div className="goal-card-date">Target: {g.target_date}</div>}
               </div>
             );

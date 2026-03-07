@@ -89,20 +89,20 @@
   max-width: 200px;
 }
 
+.metric-bar-track {
+  height: 6px;
+  background: var(--border-color);
+  border-radius: 3px;
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
 .metric-bar {
   height: 6px;
   background: var(--primary-color);
   border-radius: 3px;
-  flex: 1;
-  position: relative;
-}
-
-.metric-bar-wrap::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: var(--border-color);
-  border-radius: 3px;
+  display: block;
 }
 
 .metric-pct {
