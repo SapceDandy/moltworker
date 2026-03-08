@@ -113,7 +113,7 @@ publicRoutes.get('/api/status/diag', async (c) => {
   for (const { name, cmd } of commands) {
     try {
       const r = await sandbox.exec(cmd);
-      results[name] = { stdout: r.stdout?.substring(0, 300), exitCode: r.exitCode };
+      results[name] = { stdout: r.stdout?.substring(0, 800), exitCode: r.exitCode };
     } catch (e) {
       results[name] = { error: e instanceof Error ? e.message : String(e) };
     }
@@ -185,6 +185,51 @@ publicRoutes.get('/api/status/boot', async (c) => {
   }
 
   return c.json({ steps });
+});
+
+// GET /api/status/discord - Check Discord channel connectivity and pairing status
+publicRoutes.get('/api/status/discord', async (c) => {
+  const sandbox = c.get('sandbox');
+  const results: Record<string, unknown> = {};
+
+  // Check channel status
+  try {
+    const probe = await sandbox.exec('timeout 20 openclaw channels status --probe 2>&1 || echo TIMEOUT');
+    results.channelStatus = probe.stdout?.substring(0, 1500) || '';
+    results.channelStatusExit = probe.exitCode;
+  } catch (e) {
+    results.channelStatus = e instanceof Error ? e.message : String(e);
+  }
+
+  // List pending pairing codes
+  try {
+    const pairing = await sandbox.exec('timeout 20 openclaw pairing list discord 2>&1 || echo TIMEOUT');
+    results.pairingList = pairing.stdout?.substring(0, 1000) || '';
+    results.pairingListExit = pairing.exitCode;
+  } catch (e) {
+    results.pairingList = e instanceof Error ? e.message : String(e);
+  }
+
+  return c.json(results);
+});
+
+// POST /api/status/pairing-approve - Approve a Discord pairing code
+publicRoutes.post('/api/status/pairing-approve', async (c) => {
+  const sandbox = c.get('sandbox');
+  const body = await c.req.json<{ code: string }>().catch(() => null);
+  if (!body?.code) {
+    return c.json({ error: 'Missing "code" in request body' }, 400);
+  }
+
+  try {
+    const result = await sandbox.exec(`timeout 20 openclaw pairing approve discord ${body.code} 2>&1`);
+    return c.json({
+      stdout: result.stdout?.substring(0, 500) || '',
+      exitCode: result.exitCode,
+    });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
+  }
 });
 
 // GET /_admin/assets/* - Admin UI static assets (CSS, JS need to load for login redirect)
