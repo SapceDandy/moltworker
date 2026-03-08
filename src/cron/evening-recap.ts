@@ -3,6 +3,7 @@ import type { MoltbotEnv } from '../types';
 import { ensureMoltbotGateway } from '../gateway';
 import { sendSessionMessage } from '../gateway/rpc';
 import { fetchCalendarEventsForCron } from './google-helpers';
+import { sendDiscordDM, extractAssistantReply } from './discord';
 
 /**
  * Evening recap: summarize the day's progress and prompt for updates.
@@ -72,6 +73,21 @@ export async function eveningRecap(env: MoltbotEnv): Promise<void> {
 
   const result = await sendSessionMessage(sandbox, message, env.MOLTBOT_GATEWAY_TOKEN);
   console.log('[CRON] Evening recap sent:', result.ok, result.status);
+
+  // Forward to Discord DM if configured
+  if (env.DISCORD_BOT_TOKEN && env.DISCORD_OWNER_USER_ID) {
+    try {
+      const reply = extractAssistantReply(result.body);
+      if (reply) {
+        const sent = await sendDiscordDM(env.DISCORD_BOT_TOKEN, env.DISCORD_OWNER_USER_ID, reply);
+        console.log('[CRON] Evening recap Discord DM:', sent ? 'sent' : 'failed');
+      } else {
+        console.warn('[CRON] No assistant reply to forward to Discord');
+      }
+    } catch (err) {
+      console.error('[CRON] Discord DM failed:', err);
+    }
+  }
 
   try {
     await env.DB.prepare(
