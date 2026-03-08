@@ -100,6 +100,7 @@ publicRoutes.get('/api/status/diag', async (c) => {
     { name: 'openclaw_version', cmd: 'openclaw --version 2>&1 || echo FAIL' },
     { name: 'config_exists', cmd: 'ls -la /root/.openclaw/openclaw.json 2>&1 || echo NO_CONFIG' },
     { name: 'config_head', cmd: 'head -c 500 /root/.openclaw/openclaw.json 2>/dev/null || echo EMPTY' },
+    { name: 'config_discord', cmd: "node -e \"const fs=require('fs');const c=JSON.parse(fs.readFileSync('/root/.openclaw/openclaw.json','utf8'));console.log(JSON.stringify(c.channels?.discord ?? null, null, 2));\" 2>&1 || echo NO_DISCORD" },
     { name: 'skills_list', cmd: 'ls /root/clawd/skills/ 2>&1 || echo NO_SKILLS' },
     { name: 'workspace_list', cmd: 'ls /root/clawd/ 2>&1 || echo NO_WORKSPACE' },
     { name: 'disk_space', cmd: 'df -h / 2>&1' },

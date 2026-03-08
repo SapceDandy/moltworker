@@ -258,18 +258,19 @@ if (process.env.TELEGRAM_BOT_TOKEN) {
 }
 
 // Discord configuration
-// Discord uses a nested dm object: dm.policy, dm.allowFrom (per DiscordDmConfig)
 if (process.env.DISCORD_BOT_TOKEN) {
     const dmPolicy = process.env.DISCORD_DM_POLICY || 'pairing';
-    const dm = { policy: dmPolicy };
-    if (dmPolicy === 'open') {
-        dm.allowFrom = ['*'];
-    }
     config.channels.discord = {
         token: process.env.DISCORD_BOT_TOKEN,
         enabled: true,
-        dm: dm,
+        dm: {
+            enabled: true,
+            policy: dmPolicy,
+        },
     };
+    if (dmPolicy === 'open') {
+        config.channels.discord.dm.allowFrom = ['*'];
+    }
 }
 
 // Slack configuration
@@ -279,21 +280,6 @@ if (process.env.SLACK_BOT_TOKEN && process.env.SLACK_APP_TOKEN) {
         appToken: process.env.SLACK_APP_TOKEN,
         enabled: true,
     };
-}
-
-// Google Chat configuration (HTTP webhook mode)
-// Requires a GCP service account with Chat API enabled
-if (process.env.GOOGLE_CHAT_SERVICE_ACCOUNT_JSON) {
-    try {
-        const serviceAccountKey = JSON.parse(process.env.GOOGLE_CHAT_SERVICE_ACCOUNT_JSON);
-        config.channels.googlechat = {
-            serviceAccountKey: serviceAccountKey,
-            enabled: true,
-        };
-        console.log('Google Chat channel configured (service account: ' + (serviceAccountKey.client_email || 'unknown') + ')');
-    } catch (e) {
-        console.warn('Failed to parse GOOGLE_CHAT_SERVICE_ACCOUNT_JSON:', e.message);
-    }
 }
 
 fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
