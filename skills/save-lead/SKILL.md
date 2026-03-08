@@ -1,6 +1,6 @@
 ---
 name: save-lead
-description: Save or update a lead in the database. Upserts by domain so duplicate domains are merged automatically.
+description: Manage leads in the CRM database. Save, search, list, and update business leads. Upserts by domain so duplicate domains are merged automatically.
 type: http
 request:
   method: POST
@@ -13,13 +13,35 @@ response:
   type: json
 ---
 
-# Save Lead
+# Lead Manager
 
-Save a business lead to the D1 database. Upserts by domain — duplicates are merged.
+Manage business leads in the CRM database. All requests require `Authorization: Bearer ${MOLTBOT_GATEWAY_TOKEN}` header.
 
-## Usage
+## Endpoints
 
-Provide lead data as JSON. At minimum, `domain` or `website` is required.
+### Save / Upsert a Lead
+
+`POST /api/leads` — Upserts by domain. Duplicates are merged.
+
+At minimum, `domain` or `website` is required.
+
+### List Leads
+
+`GET /api/leads?q=austin&status=new&category=restaurant&state=TX&min_score=50&limit=50&offset=0`
+
+Returns `{ leads: [...], total, limit, offset }`. Supports search across business_name, domain, email, city.
+
+### Get Lead
+
+`GET /api/leads/{id}`
+
+### Update Lead
+
+`PUT /api/leads/{id}` — Update specific fields (e.g., `lead_status`, `notes`, `email`).
+
+### Delete Lead
+
+`DELETE /api/leads/{id}`
 
 ## Fields
 
@@ -41,11 +63,19 @@ Provide lead data as JSON. At minimum, `domain` or `website` is required.
 | `evidence_snippet` | string | Text snippet supporting the match |
 | `match_score` | number | Relevance score (0-100) |
 | `notes` | string | Additional notes |
+| `lead_status` | string | Pipeline status: `new`, `contacted`, `replied`, `qualified`, `won`, `lost` |
+
+## Lead Discovery
+
+When the owner asks you to find leads:
+1. Use `search-tavily` to find businesses matching criteria (industry, location, etc.)
+2. Use `fetch-page` or `cloudflare-browser` to extract contact info from business websites
+3. Save each lead via `POST /api/leads` with match_score reflecting relevance
 
 ## Example
 
 ```
-save-lead lead_json={"domain":"example.com","business_name":"Example Corp","email":"info@example.com","city":"Austin","state":"TX","match_score":85}
+save-lead lead_json={"domain":"example.com","business_name":"Example Corp","email":"info@example.com","city":"Austin","state":"TX","match_score":85,"lead_status":"new"}
 ```
 
 ## Response

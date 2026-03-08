@@ -15,6 +15,9 @@ import { dashboard } from './dashboard';
 import { reminders } from './reminders';
 import { agentLogs } from './agent-logs';
 import { google } from './google';
+import { comments } from './comments';
+import { leads as leadsRoutes } from './leads';
+import { actions } from './actions';
 
 // CLI commands can take 10-15 seconds to complete due to WebSocket connection overhead
 const CLI_TIMEOUT_MS = 20000;
@@ -33,27 +36,6 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   ]);
 }
 
-/**
- * Normalize a domain string: extract hostname, strip www., lowercase.
- */
-function normalizeDomain(input: string): string {
-  try {
-    const u = input.startsWith('http') ? new URL(input) : new URL(`https://${input}`);
-    return u.hostname.replace(/^www\./, '').toLowerCase();
-  } catch {
-    return input.replace(/^www\./, '').toLowerCase();
-  }
-}
-
-/**
- * Convert a value to a CSV-safe string.
- */
-function toCsvValue(v: unknown): string {
-  const s = (v ?? '').toString().replace(/\r?\n/g, ' ').trim();
-  const needsQuotes = /[",]/.test(s);
-  const escaped = s.replace(/"/g, '""');
-  return needsQuotes ? `"${escaped}"` : escaped;
-}
 
 /**
  * API routes
@@ -351,159 +333,8 @@ adminApi.post('/gateway/restart', async (c) => {
   }
 });
 
-// POST /api/leads - Upsert a lead to the D1 database (keyed by domain)
-api.post('/leads', async (c) => {
-  try {
-    const body = await c.req.json().catch(() => null);
-    if (!body || typeof body !== 'object') {
-      return c.json({ error: 'Invalid JSON' }, 400);
-    }
-
-    const data = body as Record<string, unknown>;
-    const website = (data.website ?? '').toString();
-    const domain = normalizeDomain((data.domain ?? website).toString());
-    if (!domain) {
-      return c.json({ error: 'domain or website required' }, 400);
-    }
-
-    const now = new Date().toISOString();
-    const id = (data.id ?? crypto.randomUUID()).toString();
-
-    const row = {
-      id,
-      domain,
-      business_name: (data.business_name ?? '').toString(),
-      website: website || `https://${domain}`,
-      phone: (data.phone ?? '').toString(),
-      email: (data.email ?? '').toString(),
-      city: (data.city ?? '').toString(),
-      state: (data.state ?? '').toString(),
-      category: (data.category ?? '').toString(),
-      owner_or_people: (data.owner_or_people ?? '').toString(),
-      linkedin_company: (data.linkedin_company ?? '').toString(),
-      linkedin_people: Array.isArray(data.linkedin_people)
-        ? JSON.stringify(data.linkedin_people)
-        : (data.linkedin_people ?? '').toString(),
-      contact_page_url: (data.contact_page_url ?? '').toString(),
-      source_urls: Array.isArray(data.source_urls)
-        ? JSON.stringify(data.source_urls)
-        : (data.source_urls ?? '').toString(),
-      evidence_snippet: (data.evidence_snippet ?? '').toString(),
-      match_score: Number.isFinite(Number(data.match_score)) ? Number(data.match_score) : null,
-      notes: (data.notes ?? '').toString(),
-      created_at: now,
-      updated_at: now,
-    };
-
-    await c.env.DB.prepare(
-      `INSERT INTO leads (
-        id, domain, business_name, website, phone, email, city, state, category,
-        owner_or_people, linkedin_company, linkedin_people, contact_page_url, source_urls,
-        evidence_snippet, match_score, notes, created_at, updated_at
-      ) VALUES (
-        ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?
-      )
-      ON CONFLICT(domain) DO UPDATE SET
-        business_name=excluded.business_name,
-        website=excluded.website,
-        phone=excluded.phone,
-        email=excluded.email,
-        city=excluded.city,
-        state=excluded.state,
-        category=excluded.category,
-        owner_or_people=excluded.owner_or_people,
-        linkedin_company=excluded.linkedin_company,
-        linkedin_people=excluded.linkedin_people,
-        contact_page_url=excluded.contact_page_url,
-        source_urls=excluded.source_urls,
-        evidence_snippet=excluded.evidence_snippet,
-        match_score=excluded.match_score,
-        notes=excluded.notes,
-        updated_at=excluded.updated_at`,
-    )
-      .bind(
-        row.id,
-        row.domain,
-        row.business_name,
-        row.website,
-        row.phone,
-        row.email,
-        row.city,
-        row.state,
-        row.category,
-        row.owner_or_people,
-        row.linkedin_company,
-        row.linkedin_people,
-        row.contact_page_url,
-        row.source_urls,
-        row.evidence_snippet,
-        row.match_score,
-        row.notes,
-        row.created_at,
-        row.updated_at,
-      )
-      .run();
-
-    return c.json({ ok: true, domain: row.domain });
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error('[leads] Failed to save lead:', errorMessage);
-    return c.json({ error: errorMessage }, 500);
-  }
-});
-
-// GET /api/export.csv - Download all leads as CSV
-api.get('/export.csv', async (c) => {
-  try {
-    const { results } = await c.env.DB.prepare(
-      `SELECT
-        domain, business_name, website, phone, email, city, state, category,
-        owner_or_people, linkedin_company, linkedin_people, contact_page_url,
-        source_urls, evidence_snippet, match_score, notes, created_at, updated_at
-       FROM leads
-       ORDER BY COALESCE(match_score, 0) DESC, updated_at DESC`,
-    ).all();
-
-    const headers = [
-      'domain',
-      'business_name',
-      'website',
-      'phone',
-      'email',
-      'city',
-      'state',
-      'category',
-      'owner_or_people',
-      'linkedin_company',
-      'linkedin_people',
-      'contact_page_url',
-      'source_urls',
-      'evidence_snippet',
-      'match_score',
-      'notes',
-      'created_at',
-      'updated_at',
-    ];
-
-    const lines = [headers.join(',')];
-    for (const r of results as Record<string, unknown>[]) {
-      lines.push(headers.map((h) => toCsvValue(r[h])).join(','));
-    }
-
-    return new Response(lines.join('\n'), {
-      headers: {
-        'Content-Type': 'text/csv; charset=utf-8',
-        'Content-Disposition': 'attachment; filename="leads.csv"',
-      },
-    });
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error('[export] Failed to export leads:', errorMessage);
-    return c.json({ error: errorMessage }, 500);
-  }
-});
+// Backward-compatible redirect: /api/export.csv -> /api/leads/export.csv
+api.get('/export.csv', (c) => c.redirect('/api/leads/export.csv'));
 
 // Mount admin API routes under /admin
 api.route('/admin', adminApi);
@@ -519,5 +350,8 @@ api.route('/dashboard', dashboard);
 api.route('/reminders', reminders);
 api.route('/agent-logs', agentLogs);
 api.route('/google', google);
+api.route('/comments', comments);
+api.route('/leads', leadsRoutes);
+api.route('/actions', actions);
 
 export { api };

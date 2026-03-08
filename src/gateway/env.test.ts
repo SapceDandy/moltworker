@@ -145,6 +145,13 @@ describe('buildEnvVars', () => {
     expect(result.CF_ACCOUNT_ID).toBe('acct-123');
   });
 
+  it('passes GOOGLE_CHAT_SERVICE_ACCOUNT_JSON to container', () => {
+    const saJson = JSON.stringify({ client_email: 'bot@project.iam.gserviceaccount.com' });
+    const env = createMockEnv({ GOOGLE_CHAT_SERVICE_ACCOUNT_JSON: saJson });
+    const result = buildEnvVars(env);
+    expect(result.GOOGLE_CHAT_SERVICE_ACCOUNT_JSON).toBe(saJson);
+  });
+
   it('combines all env vars correctly', () => {
     const env = createMockEnv({
       ANTHROPIC_API_KEY: 'sk-key',

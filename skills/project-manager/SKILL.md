@@ -90,6 +90,33 @@ Reminder fields: `title`, `description`, `remind_at` (required, ISO datetime), `
 
 Use `upcoming=true` to get pending reminders due within the next 24 hours.
 
+### Task Comments
+
+- **List comments**: `GET /api/comments/{task_id}` — returns all comments on a task in chronological order
+- **Add comment**: `POST /api/comments/{task_id}` with JSON body `{ "content": "...", "author": "agent", "author_name": "Kudjo", "comment_type": "progress_report" }`
+- **Delete comment**: `DELETE /api/comments/{task_id}/{comment_id}`
+
+Comment fields: `content` (required), `author` (`user`/`agent`), `author_name` (display name), `comment_type` (`comment`/`status_change`/`progress_report`/`action_request`), `metadata` (optional JSON)
+
+Use comments to:
+- Post progress reports on tasks
+- Ask the owner for updates or decisions
+- Log status change reasons
+- Request approval for actions (with `comment_type: "action_request"`)
+
+### Draft Actions
+
+- **List actions**: `GET /api/actions?status=pending&task_id={id}&lead_id={id}&action_type=email_draft`
+- **Get action**: `GET /api/actions/{id}`
+- **Create action**: `POST /api/actions` with JSON body `{ "action_type": "email_draft", "title": "...", "content": "{...}", "task_id": "...", "lead_id": "..." }`
+- **Approve action**: `PUT /api/actions/{id}/approve`
+- **Reject action**: `PUT /api/actions/{id}/reject` with optional `{ "reason": "..." }`
+
+Action types: `email_draft`, `calendar_event`, `task_update`, `message`
+Action statuses: `pending`, `approved`, `rejected`, `sent`, `failed`
+
+**CRITICAL**: Never send emails directly. Always create an `email_draft` action for owner approval. See `google-gmail-send` skill.
+
 ## Usage Rules
 
 1. ALWAYS query the database before reporting project status. Never say "I remember..." for status — check the API.

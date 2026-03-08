@@ -9,6 +9,7 @@ const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/calendar',
   'https://www.googleapis.com/auth/tasks',
   'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/gmail.send',
   'https://www.googleapis.com/auth/userinfo.email',
 ].join(' ');
 
@@ -605,6 +606,92 @@ google.get('/gmail/threads/:id', async (c) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error';
     return c.json({ error: { code: 'GMAIL_THREAD_FAILED', message: msg } }, 500);
+  }
+});
+
+// POST /google/gmail/send - Send an email via Gmail
+google.post('/gmail/send', async (c) => {
+  const configErr = requireGoogleConfig(c);
+  if (configErr) return c.json({ error: configErr.error }, 400);
+
+  const body = await c.req.json().catch(() => null);
+  if (!body || typeof body !== 'object') {
+    return c.json({ error: { code: 'INVALID_JSON', message: 'Invalid JSON body' } }, 400);
+  }
+
+  const data = body as Record<string, unknown>;
+  const to = (data.to as string) || '';
+  const subject = (data.subject as string) || '';
+  const bodyText = (data.body as string) || (data.html as string) || '';
+  const cc = (data.cc as string) || '';
+  const bcc = (data.bcc as string) || '';
+  const accountId = (data.account_id as string) || undefined;
+  const isHtml = !!(data.html as string);
+
+  if (!to || !subject) {
+    return c.json({ error: { code: 'VALIDATION', message: 'to and subject are required' } }, 400);
+  }
+
+  try {
+    const integration = await getIntegration(c.env.DB, accountId);
+    if (!integration) {
+      return c.json({ error: { code: 'NO_ACCOUNT', message: 'No Google account connected' } }, 400);
+    }
+
+    const token = await getValidAccessToken(integration, c.env);
+    if (!token) {
+      return c.json({ error: { code: 'TOKEN_EXPIRED', message: 'Could not get valid access token' } }, 401);
+    }
+
+    // Check if gmail.send scope is authorized
+    const scopes = (integration.scopes as string) || '';
+    if (!scopes.includes('gmail.send')) {
+      return c.json({
+        error: {
+          code: 'MISSING_SCOPE',
+          message: 'Gmail send scope not authorized. Please re-connect your Google account to grant send permission.',
+        },
+      }, 403);
+    }
+
+    // Build RFC 2822 email message
+    const fromEmail = (integration.account_email as string) || '';
+    let rawMessage = `From: ${fromEmail}\r\nTo: ${to}\r\nSubject: ${subject}\r\n`;
+    if (cc) rawMessage += `Cc: ${cc}\r\n`;
+    if (bcc) rawMessage += `Bcc: ${bcc}\r\n`;
+    rawMessage += `Content-Type: ${isHtml ? 'text/html' : 'text/plain'}; charset=utf-8\r\n`;
+    rawMessage += `\r\n${bodyText}`;
+
+    // Base64url encode
+    const encoded = btoa(unescape(encodeURIComponent(rawMessage)))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+
+    const resp = await fetch(
+      'https://www.googleapis.com/gmail/v1/users/me/messages/send',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ raw: encoded }),
+      },
+    );
+
+    if (!resp.ok) {
+      const errBody = await resp.text();
+      console.error('[gmail] Send failed:', errBody);
+      return c.json({ error: { code: 'GMAIL_SEND_FAILED', message: errBody } }, resp.status as 400);
+    }
+
+    const result = await resp.json();
+    return c.json({ ok: true, message_id: (result as Record<string, unknown>).id });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[gmail] Send error:', msg);
+    return c.json({ error: { code: 'GMAIL_SEND_FAILED', message: msg } }, 500);
   }
 });
 

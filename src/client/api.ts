@@ -261,6 +261,56 @@ export interface Blocker {
   days_open?: number;
 }
 
+export interface TaskComment {
+  id: string;
+  task_id: string;
+  author: string;
+  author_name: string | null;
+  content: string;
+  comment_type: string;
+  metadata: string | null;
+  created_at: string;
+}
+
+export interface Lead {
+  id: string;
+  domain: string;
+  business_name: string;
+  website: string;
+  phone: string;
+  email: string;
+  city: string;
+  state: string;
+  category: string;
+  owner_or_people: string;
+  linkedin_company: string;
+  linkedin_people: string;
+  contact_page_url: string;
+  source_urls: string;
+  evidence_snippet: string;
+  match_score: number | null;
+  notes: string;
+  lead_status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DraftAction {
+  id: string;
+  task_id: string | null;
+  lead_id: string | null;
+  action_type: string;
+  title: string;
+  content: string;
+  status: string;
+  created_by: string;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  result: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface AgentLog {
   id: string;
   action: string;
@@ -328,6 +378,10 @@ export async function listTasks(filters?: { project_id?: string; status?: string
   if (filters?.status) params.set('status', filters.status);
   const qs = params.toString();
   return execApi(`/tasks${qs ? `?${qs}` : ''}`);
+}
+
+export async function getTask(id: string): Promise<{ task: Task; blockers: Blocker[] }> {
+  return execApi(`/tasks/${id}`);
 }
 
 export async function createTask(data: Partial<Task>): Promise<{ ok: boolean; id: string }> {
@@ -453,4 +507,100 @@ export async function disconnectGoogleAccount(id: string): Promise<{ ok: boolean
 export function getGoogleAuthUrl(label?: string): string {
   const params = label ? `?label=${encodeURIComponent(label)}` : '';
   return `/api/google/auth${params}`;
+}
+
+// --- Task Comments ---
+
+export async function listComments(taskId: string): Promise<{ comments: TaskComment[] }> {
+  return execApi(`/comments/${taskId}`);
+}
+
+export async function createComment(taskId: string, data: { content: string; author?: string; author_name?: string; comment_type?: string }): Promise<{ ok: boolean; id: string }> {
+  return execApi(`/comments/${taskId}`, { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function deleteComment(taskId: string, commentId: string): Promise<{ ok: boolean; id: string }> {
+  return execApi(`/comments/${taskId}/${commentId}`, { method: 'DELETE' });
+}
+
+// --- Leads ---
+
+export async function listLeads(filters?: {
+  category?: string; city?: string; state?: string; status?: string;
+  min_score?: number; q?: string; limit?: number; offset?: number;
+}): Promise<{ leads: Lead[]; total: number; limit: number; offset: number }> {
+  const params = new URLSearchParams();
+  if (filters?.category) params.set('category', filters.category);
+  if (filters?.city) params.set('city', filters.city);
+  if (filters?.state) params.set('state', filters.state);
+  if (filters?.status) params.set('status', filters.status);
+  if (filters?.min_score != null) params.set('min_score', filters.min_score.toString());
+  if (filters?.q) params.set('q', filters.q);
+  if (filters?.limit) params.set('limit', filters.limit.toString());
+  if (filters?.offset) params.set('offset', filters.offset.toString());
+  const qs = params.toString();
+  return execApi(`/leads${qs ? `?${qs}` : ''}`);
+}
+
+export async function getLead(id: string): Promise<{ lead: Lead }> {
+  return execApi(`/leads/${id}`);
+}
+
+export async function createLead(data: Partial<Lead> & { domain?: string }): Promise<{ ok: boolean; domain: string }> {
+  return execApi('/leads', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function updateLead(id: string, data: Partial<Lead>): Promise<{ ok: boolean; id: string }> {
+  return execApi(`/leads/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+}
+
+export async function deleteLead(id: string): Promise<{ ok: boolean; id: string }> {
+  return execApi(`/leads/${id}`, { method: 'DELETE' });
+}
+
+export async function importLeadsCsv(file: File): Promise<{ ok: boolean; imported: number; skipped: number; errors: string[] }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await fetch('/api/leads/import', {
+    method: 'POST',
+    credentials: 'include',
+    body: formData,
+  });
+  if (response.status === 401) throw new AuthError('Unauthorized');
+  const data = await response.json() as any;
+  if (!response.ok) throw new Error(data.error?.message || `Import failed: ${response.status}`);
+  return data;
+}
+
+// --- Draft Actions ---
+
+export async function listActions(filters?: {
+  status?: string; task_id?: string; lead_id?: string; action_type?: string;
+}): Promise<{ actions: DraftAction[]; pending_count: number }> {
+  const params = new URLSearchParams();
+  if (filters?.status) params.set('status', filters.status);
+  if (filters?.task_id) params.set('task_id', filters.task_id);
+  if (filters?.lead_id) params.set('lead_id', filters.lead_id);
+  if (filters?.action_type) params.set('action_type', filters.action_type);
+  const qs = params.toString();
+  return execApi(`/actions${qs ? `?${qs}` : ''}`);
+}
+
+export async function getAction(id: string): Promise<{ action: DraftAction }> {
+  return execApi(`/actions/${id}`);
+}
+
+export async function approveAction(id: string): Promise<{ ok: boolean; id: string; status: string }> {
+  return execApi(`/actions/${id}/approve`, { method: 'PUT' });
+}
+
+export async function rejectAction(id: string, reason?: string): Promise<{ ok: boolean; id: string; status: string }> {
+  return execApi(`/actions/${id}/reject`, {
+    method: 'PUT',
+    body: JSON.stringify({ reason: reason || '' }),
+  });
+}
+
+export async function sendAction(id: string): Promise<{ ok: boolean; id: string; status: string }> {
+  return execApi(`/actions/${id}/send`, { method: 'PUT' });
 }

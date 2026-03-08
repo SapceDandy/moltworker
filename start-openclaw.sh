@@ -281,6 +281,21 @@ if (process.env.SLACK_BOT_TOKEN && process.env.SLACK_APP_TOKEN) {
     };
 }
 
+// Google Chat configuration (HTTP webhook mode)
+// Requires a GCP service account with Chat API enabled
+if (process.env.GOOGLE_CHAT_SERVICE_ACCOUNT_JSON) {
+    try {
+        const serviceAccountKey = JSON.parse(process.env.GOOGLE_CHAT_SERVICE_ACCOUNT_JSON);
+        config.channels.googlechat = {
+            serviceAccountKey: serviceAccountKey,
+            enabled: true,
+        };
+        console.log('Google Chat channel configured (service account: ' + (serviceAccountKey.client_email || 'unknown') + ')');
+    } catch (e) {
+        console.warn('Failed to parse GOOGLE_CHAT_SERVICE_ACCOUNT_JSON:', e.message);
+    }
+}
+
 fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
 console.log('Configuration patched successfully');
 EOFPATCH

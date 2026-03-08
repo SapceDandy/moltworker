@@ -54,6 +54,7 @@ export function buildEnvVars(env: MoltbotEnv): Record<string, string> {
   if (env.CDP_SECRET) envVars.CDP_SECRET = env.CDP_SECRET;
   if (env.WORKER_URL) envVars.WORKER_URL = env.WORKER_URL;
   if (env.TAVILY_API_KEY) envVars.TAVILY_API_KEY = env.TAVILY_API_KEY;
+  if (env.GOOGLE_CHAT_SERVICE_ACCOUNT_JSON) envVars.GOOGLE_CHAT_SERVICE_ACCOUNT_JSON = env.GOOGLE_CHAT_SERVICE_ACCOUNT_JSON;
 
   // R2 persistence credentials (used by rclone in start-openclaw.sh)
   if (env.R2_ACCESS_KEY_ID) envVars.R2_ACCESS_KEY_ID = env.R2_ACCESS_KEY_ID;

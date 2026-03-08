@@ -1,0 +1,222 @@
+/* Leads CRM Page */
+.leads-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.leads-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.leads-header h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.leads-header-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.leads-header-actions button,
+.leads-header-actions a {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.8rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  background: var(--surface-color);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.leads-header-actions .btn-primary {
+  background: var(--primary-color);
+  color: white;
+  border-color: var(--primary-color);
+}
+
+/* Toolbar: search + filters */
+.leads-toolbar {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.leads-search {
+  flex: 1;
+  min-width: 200px;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  background: var(--surface-color);
+  color: var(--text-primary);
+}
+
+.leads-search:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.leads-toolbar select {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--surface-color);
+  color: var(--text-primary);
+  font-size: 0.75rem;
+}
+
+.leads-count {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+/* Table */
+.leads-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.leads-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.leads-table th {
+  background: var(--bg-color, #f8f9fa);
+  padding: 0.6rem 0.75rem;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+.leads-table th:hover {
+  color: var(--text-primary);
+}
+
+.leads-table td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+  white-space: nowrap;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.leads-table tr:hover td {
+  background: var(--surface-hover);
+  cursor: pointer;
+}
+
+.leads-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* Status badges */
+.lead-status-badge {
+  display: inline-block;
+  font-size: 0.6rem;
+  font-weight: 600;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.lead-status-badge.status-new { background: rgba(96, 165, 250, 0.15); color: #60a5fa; }
+.lead-status-badge.status-contacted { background: rgba(251, 191, 36, 0.15); color: #eab308; }
+.lead-status-badge.status-replied { background: rgba(168, 85, 247, 0.15); color: #a855f7; }
+.lead-status-badge.status-qualified { background: rgba(74, 222, 128, 0.15); color: #22c55e; }
+.lead-status-badge.status-won { background: rgba(74, 222, 128, 0.3); color: #16a34a; }
+.lead-status-badge.status-lost { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+
+.lead-score {
+  font-weight: 600;
+  font-family: monospace;
+  font-size: 0.75rem;
+}
+
+.lead-score.high { color: #22c55e; }
+.lead-score.medium { color: #eab308; }
+.lead-score.low { color: var(--text-muted); }
+
+/* Empty / Loading */
+.leads-empty {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--text-muted);
+}
+
+.leads-empty p {
+  margin: 0 0 0.5rem;
+}
+
+/* Import result banner */
+.import-banner {
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  background: rgba(74, 222, 128, 0.1);
+  border: 1px solid rgba(74, 222, 128, 0.3);
+  color: var(--text-primary);
+}
+
+.import-banner.has-errors {
+  background: rgba(251, 191, 36, 0.1);
+  border-color: rgba(251, 191, 36, 0.3);
+}
+
+/* Lead detail panel - reuses board detail panel styles */
+
+/* Pagination */
+.leads-pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+}
+
+.leads-pagination button {
+  padding: 0.3rem 0.75rem;
+  font-size: 0.75rem;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  background: var(--surface-color);
+  color: var(--text-primary);
+}
+
+.leads-pagination button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.leads-pagination span {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* Hidden file input */
+.hidden-input {
+  display: none;
+}

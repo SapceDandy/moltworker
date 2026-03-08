@@ -47,6 +47,7 @@ export interface MoltbotEnv {
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
   TOKEN_ENCRYPTION_KEY?: string; // 32-byte hex key for AES-GCM encryption of OAuth tokens
+  GOOGLE_CHAT_SERVICE_ACCOUNT_JSON?: string; // Service account JSON for Google Chat channel
   DB: D1Database; // D1 database for leads and other data
 }
 
