@@ -1,30 +1,26 @@
 ---
-name: google-docs
-description: Read Google Docs content — get document title, body, and structure. Use this to read and analyze existing documents. For creating or editing documents, use the google-docs-write skill.
+name: google-docs-write
+description: Create and edit Google Docs — create new documents and update content with batch operations (insert text, delete text, replace text, insert tables). Use this for all document writing and editing.
 type: http
 request:
-  method: GET
-  url: "${WORKER_URL}/api/google/docs/{{documentId}}"
+  method: POST
+  url: "${WORKER_URL}/api/google/docs"
   headers:
     Content-Type: application/json
     Authorization: "Bearer ${MOLTBOT_GATEWAY_TOKEN}"
+  body:
+    title: "{{title}}"
 response:
   type: json
 ---
 
-# Google Docs
+# Google Docs Write
 
-Read, create, and edit Google Docs. Use this skill for document-level content operations.
+Create and edit Google Docs. Use this skill for all document creation and editing operations.
 
 All requests require `Authorization: Bearer ${MOLTBOT_GATEWAY_TOKEN}` header.
 
 ## Endpoints
-
-### Get Document Content
-
-`GET /api/google/docs/:documentId?account_id=<optional>`
-
-Returns the document's title, body (structured JSON with paragraphs, text runs, etc.), and revisionId.
 
 ### Create New Document
 
@@ -37,7 +33,7 @@ Returns the document's title, body (structured JSON with paragraphs, text runs, 
 }
 ```
 
-Returns `documentId`, `title`, and `revisionId`. Use the batch update endpoint to add content after creation.
+Returns `documentId`, `title`, and `revisionId`. Use the batch update endpoint below to add content after creation.
 
 ### Edit Document (Batch Update)
 
@@ -69,16 +65,15 @@ Returns `documentId`, `title`, and `revisionId`. Use the batch update endpoint t
 - Newlines count as 1 character
 - Use `replaceAllText` for simple find-and-replace (no index needed)
 
+## Workflow: Create a Document with Content
+
+1. **Create** the document: `POST /api/google/docs` with `{ "title": "My Doc" }`
+2. **Write content**: `PATCH /api/google/docs/:documentId` with insertText requests
+3. The document is immediately available in Google Drive
+
 ## When to Use
 
 - **Creating documents**: Generate reports, proposals, meeting notes, or any text document
-- **Reading documents**: Extract content from existing docs for analysis
 - **Editing documents**: Update existing documents with new content
 - **Templates**: Create documents from templates by inserting/replacing text
-
-## Important Notes
-
-- Use `google-drive` skill to find document IDs by name
-- Batch update requests are applied in order — plan indexes carefully
-- For simple content creation, create the doc then insert text at index 1
-- For reading plain text, prefer `google-drive` file content export with `exportMimeType=text/plain`
+- **Reports**: Write analysis results or summaries into Google Docs
