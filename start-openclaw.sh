@@ -233,6 +233,10 @@ config.agents = config.agents || {};
 config.agents.defaults = config.agents.defaults || {};
 config.agents.defaults.workspace = '/root/clawd';
 
+// Clean up invalid keys that may exist in R2 backup from previous deploys
+// OpenClaw's strict config validation rejects unknown keys
+delete config.agents.defaults.subagents;
+
 // Skills: enable all bundled skills, watch for changes
 config.skills = config.skills || {};
 config.skills.allowBundled = config.skills.allowBundled || ['*'];
