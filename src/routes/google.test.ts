@@ -426,4 +426,72 @@ describe('google routes', () => {
       expect(body.error.code).toBe('NO_ACCOUNT');
     });
   });
+
+  // ============================================================
+  // Google Slides API
+  // ============================================================
+
+  describe('GET /google/slides/:id', () => {
+    it('returns 400 when no account connected', async () => {
+      const res = await req('/google/slides/pres-123');
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as any;
+      expect(body.error.code).toBe('NO_ACCOUNT');
+    });
+  });
+
+  describe('POST /google/slides', () => {
+    it('returns 400 for invalid JSON', async () => {
+      const res = await req('/google/slides', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: 'not json',
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 400 when no account connected', async () => {
+      const res = await req('/google/slides', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'Test Deck' }),
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as any;
+      expect(body.error.code).toBe('NO_ACCOUNT');
+    });
+  });
+
+  describe('PATCH /google/slides/:id', () => {
+    it('returns 400 for invalid JSON', async () => {
+      const res = await req('/google/slides/pres-123', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: 'not json',
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 400 when requests array is empty', async () => {
+      const res = await req('/google/slides/pres-123', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requests: [] }),
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as any;
+      expect(body.error.code).toBe('VALIDATION');
+    });
+
+    it('returns 400 when no account connected', async () => {
+      const res = await req('/google/slides/pres-123', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requests: [{ createSlide: { objectId: 's1', insertionIndex: 1 } }] }),
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as any;
+      expect(body.error.code).toBe('NO_ACCOUNT');
+    });
+  });
 });

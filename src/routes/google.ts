@@ -13,6 +13,7 @@ const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/drive',
   'https://www.googleapis.com/auth/spreadsheets',
   'https://www.googleapis.com/auth/documents',
+  'https://www.googleapis.com/auth/presentations',
   'https://www.googleapis.com/auth/userinfo.email',
 ].join(' ');
 
@@ -1268,6 +1269,165 @@ google.patch('/docs/:id', async (c) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error';
     return c.json({ error: { code: 'DOCS_UPDATE_FAILED', message: msg } }, 500);
+  }
+});
+
+// ============================================================
+// Google Slides API Proxy
+// ============================================================
+
+// GET /google/slides/:id - Get presentation content
+google.get('/slides/:id', async (c) => {
+  const configErr = requireGoogleConfig(c);
+  if (configErr) return c.json({ error: configErr.error }, 400);
+
+  const presentationId = c.req.param('id');
+  const accountId = c.req.query('account_id');
+
+  try {
+    const integration = await getIntegration(c.env.DB, accountId);
+    if (!integration) {
+      return c.json({ error: { code: 'NO_ACCOUNT', message: 'No Google account connected' } }, 400);
+    }
+
+    const token = await getValidAccessToken(integration, c.env);
+    if (!token) {
+      return c.json({ error: { code: 'TOKEN_EXPIRED', message: 'Could not get valid access token' } }, 401);
+    }
+
+    const resp = await fetch(
+      `https://slides.googleapis.com/v1/presentations/${presentationId}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+
+    if (!resp.ok) {
+      const errBody = await resp.text();
+      return c.json({ error: { code: 'GOOGLE_API_ERROR', message: errBody } }, resp.status as 400);
+    }
+
+    const pres = (await resp.json()) as Record<string, unknown>;
+    return c.json({
+      presentationId: pres.presentationId,
+      title: pres.title,
+      slides: pres.slides,
+      slideProperties: pres.slideProperties,
+      pageSize: pres.pageSize,
+      locale: pres.locale,
+      revisionId: pres.revisionId,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    return c.json({ error: { code: 'SLIDES_GET_FAILED', message: msg } }, 500);
+  }
+});
+
+// POST /google/slides - Create a new presentation
+google.post('/slides', async (c) => {
+  const configErr = requireGoogleConfig(c);
+  if (configErr) return c.json({ error: configErr.error }, 400);
+
+  const body = await c.req.json().catch(() => null);
+  if (!body || typeof body !== 'object') {
+    return c.json({ error: { code: 'INVALID_JSON', message: 'Invalid JSON body' } }, 400);
+  }
+
+  const data = body as Record<string, unknown>;
+  const title = (data.title as string) || 'Untitled Presentation';
+  const accountId = (data.account_id as string) || undefined;
+
+  try {
+    const integration = await getIntegration(c.env.DB, accountId);
+    if (!integration) {
+      return c.json({ error: { code: 'NO_ACCOUNT', message: 'No Google account connected' } }, 400);
+    }
+
+    const token = await getValidAccessToken(integration, c.env);
+    if (!token) {
+      return c.json({ error: { code: 'TOKEN_EXPIRED', message: 'Could not get valid access token' } }, 401);
+    }
+
+    const resp = await fetch(
+      'https://slides.googleapis.com/v1/presentations',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ title }),
+      },
+    );
+
+    if (!resp.ok) {
+      const errBody = await resp.text();
+      return c.json({ error: { code: 'GOOGLE_API_ERROR', message: errBody } }, resp.status as 400);
+    }
+
+    const pres = (await resp.json()) as Record<string, unknown>;
+    return c.json({
+      ok: true,
+      presentationId: pres.presentationId,
+      title: pres.title,
+      revisionId: pres.revisionId,
+    }, 201);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    return c.json({ error: { code: 'SLIDES_CREATE_FAILED', message: msg } }, 500);
+  }
+});
+
+// PATCH /google/slides/:id - Batch update presentation
+google.patch('/slides/:id', async (c) => {
+  const configErr = requireGoogleConfig(c);
+  if (configErr) return c.json({ error: configErr.error }, 400);
+
+  const presentationId = c.req.param('id');
+  const body = await c.req.json().catch(() => null);
+  if (!body || typeof body !== 'object') {
+    return c.json({ error: { code: 'INVALID_JSON', message: 'Invalid JSON body' } }, 400);
+  }
+
+  const data = body as Record<string, unknown>;
+  const requests = (data.requests as unknown[]) || [];
+  const accountId = (data.account_id as string) || undefined;
+
+  if (requests.length === 0) {
+    return c.json({ error: { code: 'VALIDATION', message: 'requests array is required and must not be empty' } }, 400);
+  }
+
+  try {
+    const integration = await getIntegration(c.env.DB, accountId);
+    if (!integration) {
+      return c.json({ error: { code: 'NO_ACCOUNT', message: 'No Google account connected' } }, 400);
+    }
+
+    const token = await getValidAccessToken(integration, c.env);
+    if (!token) {
+      return c.json({ error: { code: 'TOKEN_EXPIRED', message: 'Could not get valid access token' } }, 401);
+    }
+
+    const resp = await fetch(
+      `https://slides.googleapis.com/v1/presentations/${presentationId}:batchUpdate`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ requests }),
+      },
+    );
+
+    if (!resp.ok) {
+      const errBody = await resp.text();
+      return c.json({ error: { code: 'GOOGLE_API_ERROR', message: errBody } }, resp.status as 400);
+    }
+
+    const result = await resp.json();
+    return c.json({ ok: true, ...result as Record<string, unknown> });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    return c.json({ error: { code: 'SLIDES_UPDATE_FAILED', message: msg } }, 500);
   }
 });
 
