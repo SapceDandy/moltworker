@@ -23,8 +23,8 @@ import { actions } from './actions';
 const CLI_TIMEOUT_MS = 20000;
 
 // Hard timeout for admin API sandbox interactions (prevents infinite hangs)
-// Gateway timeout must accommodate cold starts (~60s for R2 restore + onboard + gateway boot)
-const ADMIN_GATEWAY_TIMEOUT_MS = 90000;
+// Gateway timeout must accommodate cold starts (~120s for R2 restore + onboard + config patch + gateway boot)
+const ADMIN_GATEWAY_TIMEOUT_MS = 200000;
 const ADMIN_EXEC_TIMEOUT_MS = 10000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
