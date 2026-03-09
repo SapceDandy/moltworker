@@ -10,6 +10,9 @@ const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/tasks',
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/gmail.send',
+  'https://www.googleapis.com/auth/drive',
+  'https://www.googleapis.com/auth/spreadsheets',
+  'https://www.googleapis.com/auth/documents',
   'https://www.googleapis.com/auth/userinfo.email',
 ].join(' ');
 
@@ -692,6 +695,579 @@ google.post('/gmail/send', async (c) => {
     const msg = err instanceof Error ? err.message : 'Unknown error';
     console.error('[gmail] Send error:', msg);
     return c.json({ error: { code: 'GMAIL_SEND_FAILED', message: msg } }, 500);
+  }
+});
+
+// ============================================================
+// Google Drive API Proxy
+// ============================================================
+
+// GET /google/drive/files - List/search files
+google.get('/drive/files', async (c) => {
+  const configErr = requireGoogleConfig(c);
+  if (configErr) return c.json({ error: configErr.error }, 400);
+
+  const q = c.req.query('q') || '';
+  const pageSize = Math.min(Number(c.req.query('pageSize')) || 20, 100);
+  const pageToken = c.req.query('pageToken') || '';
+  const accountId = c.req.query('account_id');
+
+  try {
+    const integration = await getIntegration(c.env.DB, accountId);
+    if (!integration) {
+      return c.json({ files: [], message: 'No Google account connected' });
+    }
+
+    const token = await getValidAccessToken(integration, c.env);
+    if (!token) {
+      return c.json({ error: { code: 'TOKEN_EXPIRED', message: 'Could not get valid access token' } }, 401);
+    }
+
+    const params = new URLSearchParams({
+      pageSize: pageSize.toString(),
+      fields: 'nextPageToken,files(id,name,mimeType,size,createdTime,modifiedTime,parents,webViewLink)',
+    });
+    if (q) params.set('q', q);
+    if (pageToken) params.set('pageToken', pageToken);
+
+    const resp = await fetch(
+      `https://www.googleapis.com/drive/v3/files?${params}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+
+    if (!resp.ok) {
+      const errBody = await resp.text();
+      return c.json({ error: { code: 'GOOGLE_API_ERROR', message: errBody } }, resp.status as 400);
+    }
+
+    const data = (await resp.json()) as { files?: unknown[]; nextPageToken?: string };
+    return c.json({
+      files: data.files ?? [],
+      nextPageToken: data.nextPageToken,
+      _account_id: integration.id,
+      _account_email: integration.account_email,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    return c.json({ error: { code: 'DRIVE_LIST_FAILED', message: msg } }, 500);
+  }
+});
+
+// GET /google/drive/files/:id - Get file metadata
+google.get('/drive/files/:id', async (c) => {
+  const configErr = requireGoogleConfig(c);
+  if (configErr) return c.json({ error: configErr.error }, 400);
+
+  const fileId = c.req.param('id');
+  const accountId = c.req.query('account_id');
+
+  try {
+    const integration = await getIntegration(c.env.DB, accountId);
+    if (!integration) {
+      return c.json({ error: { code: 'NO_ACCOUNT', message: 'No Google account connected' } }, 400);
+    }
+
+    const token = await getValidAccessToken(integration, c.env);
+    if (!token) {
+      return c.json({ error: { code: 'TOKEN_EXPIRED', message: 'Could not get valid access token' } }, 401);
+    }
+
+    const fields = 'id,name,mimeType,size,createdTime,modifiedTime,parents,webViewLink,description';
+    const resp = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${fileId}?fields=${fields}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+
+    if (!resp.ok) {
+      const errBody = await resp.text();
+      return c.json({ error: { code: 'GOOGLE_API_ERROR', message: errBody } }, resp.status as 400);
+    }
+
+    const file = await resp.json();
+    return c.json({ file });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    return c.json({ error: { code: 'DRIVE_GET_FAILED', message: msg } }, 500);
+  }
+});
+
+// GET /google/drive/files/:id/content - Download/export file content
+google.get('/drive/files/:id/content', async (c) => {
+  const configErr = requireGoogleConfig(c);
+  if (configErr) return c.json({ error: configErr.error }, 400);
+
+  const fileId = c.req.param('id');
+  const exportMimeType = c.req.query('exportMimeType') || 'text/plain';
+  const accountId = c.req.query('account_id');
+
+  try {
+    const integration = await getIntegration(c.env.DB, accountId);
+    if (!integration) {
+      return c.json({ error: { code: 'NO_ACCOUNT', message: 'No Google account connected' } }, 400);
+    }
+
+    const token = await getValidAccessToken(integration, c.env);
+    if (!token) {
+      return c.json({ error: { code: 'TOKEN_EXPIRED', message: 'Could not get valid access token' } }, 401);
+    }
+
+    // First get the file metadata to check mimeType
+    const metaResp = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${fileId}?fields=mimeType,name`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+
+    if (!metaResp.ok) {
+      const errBody = await metaResp.text();
+      return c.json({ error: { code: 'GOOGLE_API_ERROR', message: errBody } }, metaResp.status as 400);
+    }
+
+    const meta = (await metaResp.json()) as { mimeType: string; name: string };
+    const isGoogleNative = meta.mimeType.startsWith('application/vnd.google-apps.');
+
+    let contentResp: Response;
+    if (isGoogleNative) {
+      // Export Google-native files (Docs, Sheets, Slides)
+      contentResp = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=${encodeURIComponent(exportMimeType)}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+    } else {
+      // Download binary/text files directly
+      contentResp = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+    }
+
+    if (!contentResp.ok) {
+      const errBody = await contentResp.text();
+      return c.json({ error: { code: 'GOOGLE_API_ERROR', message: errBody } }, contentResp.status as 400);
+    }
+
+    const content = await contentResp.text();
+    return c.json({ name: meta.name, mimeType: meta.mimeType, exportedAs: isGoogleNative ? exportMimeType : meta.mimeType, content });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    return c.json({ error: { code: 'DRIVE_CONTENT_FAILED', message: msg } }, 500);
+  }
+});
+
+// POST /google/drive/files - Create a file
+google.post('/drive/files', async (c) => {
+  const configErr = requireGoogleConfig(c);
+  if (configErr) return c.json({ error: configErr.error }, 400);
+
+  const body = await c.req.json().catch(() => null);
+  if (!body || typeof body !== 'object') {
+    return c.json({ error: { code: 'INVALID_JSON', message: 'Invalid JSON body' } }, 400);
+  }
+
+  const data = body as Record<string, unknown>;
+  const name = (data.name as string) || 'Untitled';
+  const mimeType = (data.mimeType as string) || 'application/vnd.google-apps.document';
+  const parents = (data.parents as string[]) || undefined;
+  const content = (data.content as string) || undefined;
+  const accountId = (data.account_id as string) || undefined;
+
+  try {
+    const integration = await getIntegration(c.env.DB, accountId);
+    if (!integration) {
+      return c.json({ error: { code: 'NO_ACCOUNT', message: 'No Google account connected' } }, 400);
+    }
+
+    const token = await getValidAccessToken(integration, c.env);
+    if (!token) {
+      return c.json({ error: { code: 'TOKEN_EXPIRED', message: 'Could not get valid access token' } }, 401);
+    }
+
+    const metadata: Record<string, unknown> = { name, mimeType };
+    if (parents) metadata.parents = parents;
+
+    let resp: Response;
+    if (content) {
+      // Multipart upload with content
+      const boundary = '---boundary' + Date.now();
+      const multipartBody = [
+        `--${boundary}`,
+        'Content-Type: application/json; charset=UTF-8',
+        '',
+        JSON.stringify(metadata),
+        `--${boundary}`,
+        `Content-Type: ${mimeType.startsWith('application/vnd.google-apps.') ? 'text/plain' : mimeType}`,
+        '',
+        content,
+        `--${boundary}--`,
+      ].join('\r\n');
+
+      resp = await fetch(
+        'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,webViewLink',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': `multipart/related; boundary=${boundary}`,
+          },
+          body: multipartBody,
+        },
+      );
+    } else {
+      // Metadata-only creation
+      resp = await fetch(
+        'https://www.googleapis.com/drive/v3/files?fields=id,name,mimeType,webViewLink',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(metadata),
+        },
+      );
+    }
+
+    if (!resp.ok) {
+      const errBody = await resp.text();
+      return c.json({ error: { code: 'GOOGLE_API_ERROR', message: errBody } }, resp.status as 400);
+    }
+
+    const file = await resp.json();
+    return c.json({ ok: true, file }, 201);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    return c.json({ error: { code: 'DRIVE_CREATE_FAILED', message: msg } }, 500);
+  }
+});
+
+// ============================================================
+// Google Sheets API Proxy
+// ============================================================
+
+// GET /google/sheets/:id - Read spreadsheet data
+google.get('/sheets/:id', async (c) => {
+  const configErr = requireGoogleConfig(c);
+  if (configErr) return c.json({ error: configErr.error }, 400);
+
+  const spreadsheetId = c.req.param('id');
+  const range = c.req.query('range') || '';
+  const accountId = c.req.query('account_id');
+
+  try {
+    const integration = await getIntegration(c.env.DB, accountId);
+    if (!integration) {
+      return c.json({ error: { code: 'NO_ACCOUNT', message: 'No Google account connected' } }, 400);
+    }
+
+    const token = await getValidAccessToken(integration, c.env);
+    if (!token) {
+      return c.json({ error: { code: 'TOKEN_EXPIRED', message: 'Could not get valid access token' } }, 401);
+    }
+
+    if (range) {
+      // Get values for a specific range
+      const resp = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+
+      if (!resp.ok) {
+        const errBody = await resp.text();
+        return c.json({ error: { code: 'GOOGLE_API_ERROR', message: errBody } }, resp.status as 400);
+      }
+
+      const data = await resp.json();
+      return c.json({ spreadsheetId, ...data as Record<string, unknown> });
+    } else {
+      // Get spreadsheet metadata (sheets list, title, etc.)
+      const resp = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=spreadsheetId,properties.title,sheets.properties`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+
+      if (!resp.ok) {
+        const errBody = await resp.text();
+        return c.json({ error: { code: 'GOOGLE_API_ERROR', message: errBody } }, resp.status as 400);
+      }
+
+      const data = await resp.json();
+      return c.json(data as Record<string, unknown>);
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    return c.json({ error: { code: 'SHEETS_READ_FAILED', message: msg } }, 500);
+  }
+});
+
+// PUT /google/sheets/:id - Write values to a range
+google.put('/sheets/:id', async (c) => {
+  const configErr = requireGoogleConfig(c);
+  if (configErr) return c.json({ error: configErr.error }, 400);
+
+  const spreadsheetId = c.req.param('id');
+  const body = await c.req.json().catch(() => null);
+  if (!body || typeof body !== 'object') {
+    return c.json({ error: { code: 'INVALID_JSON', message: 'Invalid JSON body' } }, 400);
+  }
+
+  const data = body as Record<string, unknown>;
+  const range = (data.range as string) || '';
+  const values = (data.values as unknown[][]) || [];
+  const accountId = (data.account_id as string) || undefined;
+
+  if (!range || values.length === 0) {
+    return c.json({ error: { code: 'VALIDATION', message: 'range and values are required' } }, 400);
+  }
+
+  try {
+    const integration = await getIntegration(c.env.DB, accountId);
+    if (!integration) {
+      return c.json({ error: { code: 'NO_ACCOUNT', message: 'No Google account connected' } }, 400);
+    }
+
+    const token = await getValidAccessToken(integration, c.env);
+    if (!token) {
+      return c.json({ error: { code: 'TOKEN_EXPIRED', message: 'Could not get valid access token' } }, 401);
+    }
+
+    const resp = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`,
+      {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ range, values }),
+      },
+    );
+
+    if (!resp.ok) {
+      const errBody = await resp.text();
+      return c.json({ error: { code: 'GOOGLE_API_ERROR', message: errBody } }, resp.status as 400);
+    }
+
+    const result = await resp.json();
+    return c.json({ ok: true, ...result as Record<string, unknown> });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    return c.json({ error: { code: 'SHEETS_WRITE_FAILED', message: msg } }, 500);
+  }
+});
+
+// POST /google/sheets - Create a new spreadsheet
+google.post('/sheets', async (c) => {
+  const configErr = requireGoogleConfig(c);
+  if (configErr) return c.json({ error: configErr.error }, 400);
+
+  const body = await c.req.json().catch(() => null);
+  if (!body || typeof body !== 'object') {
+    return c.json({ error: { code: 'INVALID_JSON', message: 'Invalid JSON body' } }, 400);
+  }
+
+  const data = body as Record<string, unknown>;
+  const title = (data.title as string) || 'Untitled Spreadsheet';
+  const sheetNames = (data.sheets as string[]) || ['Sheet1'];
+  const accountId = (data.account_id as string) || undefined;
+
+  try {
+    const integration = await getIntegration(c.env.DB, accountId);
+    if (!integration) {
+      return c.json({ error: { code: 'NO_ACCOUNT', message: 'No Google account connected' } }, 400);
+    }
+
+    const token = await getValidAccessToken(integration, c.env);
+    if (!token) {
+      return c.json({ error: { code: 'TOKEN_EXPIRED', message: 'Could not get valid access token' } }, 401);
+    }
+
+    const resp = await fetch(
+      'https://sheets.googleapis.com/v4/spreadsheets',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          properties: { title },
+          sheets: sheetNames.map((name) => ({
+            properties: { title: name },
+          })),
+        }),
+      },
+    );
+
+    if (!resp.ok) {
+      const errBody = await resp.text();
+      return c.json({ error: { code: 'GOOGLE_API_ERROR', message: errBody } }, resp.status as 400);
+    }
+
+    const result = (await resp.json()) as Record<string, unknown>;
+    return c.json({
+      ok: true,
+      spreadsheetId: result.spreadsheetId,
+      spreadsheetUrl: result.spreadsheetUrl,
+      title,
+    }, 201);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    return c.json({ error: { code: 'SHEETS_CREATE_FAILED', message: msg } }, 500);
+  }
+});
+
+// ============================================================
+// Google Docs API Proxy
+// ============================================================
+
+// GET /google/docs/:id - Get document content
+google.get('/docs/:id', async (c) => {
+  const configErr = requireGoogleConfig(c);
+  if (configErr) return c.json({ error: configErr.error }, 400);
+
+  const documentId = c.req.param('id');
+  const accountId = c.req.query('account_id');
+
+  try {
+    const integration = await getIntegration(c.env.DB, accountId);
+    if (!integration) {
+      return c.json({ error: { code: 'NO_ACCOUNT', message: 'No Google account connected' } }, 400);
+    }
+
+    const token = await getValidAccessToken(integration, c.env);
+    if (!token) {
+      return c.json({ error: { code: 'TOKEN_EXPIRED', message: 'Could not get valid access token' } }, 401);
+    }
+
+    const resp = await fetch(
+      `https://docs.googleapis.com/v1/documents/${documentId}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+
+    if (!resp.ok) {
+      const errBody = await resp.text();
+      return c.json({ error: { code: 'GOOGLE_API_ERROR', message: errBody } }, resp.status as 400);
+    }
+
+    const doc = (await resp.json()) as Record<string, unknown>;
+    return c.json({
+      documentId: doc.documentId,
+      title: doc.title,
+      body: doc.body,
+      revisionId: doc.revisionId,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    return c.json({ error: { code: 'DOCS_GET_FAILED', message: msg } }, 500);
+  }
+});
+
+// POST /google/docs - Create a new document
+google.post('/docs', async (c) => {
+  const configErr = requireGoogleConfig(c);
+  if (configErr) return c.json({ error: configErr.error }, 400);
+
+  const body = await c.req.json().catch(() => null);
+  if (!body || typeof body !== 'object') {
+    return c.json({ error: { code: 'INVALID_JSON', message: 'Invalid JSON body' } }, 400);
+  }
+
+  const data = body as Record<string, unknown>;
+  const title = (data.title as string) || 'Untitled Document';
+  const accountId = (data.account_id as string) || undefined;
+
+  try {
+    const integration = await getIntegration(c.env.DB, accountId);
+    if (!integration) {
+      return c.json({ error: { code: 'NO_ACCOUNT', message: 'No Google account connected' } }, 400);
+    }
+
+    const token = await getValidAccessToken(integration, c.env);
+    if (!token) {
+      return c.json({ error: { code: 'TOKEN_EXPIRED', message: 'Could not get valid access token' } }, 401);
+    }
+
+    const resp = await fetch(
+      'https://docs.googleapis.com/v1/documents',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ title }),
+      },
+    );
+
+    if (!resp.ok) {
+      const errBody = await resp.text();
+      return c.json({ error: { code: 'GOOGLE_API_ERROR', message: errBody } }, resp.status as 400);
+    }
+
+    const doc = (await resp.json()) as Record<string, unknown>;
+    return c.json({
+      ok: true,
+      documentId: doc.documentId,
+      title: doc.title,
+      revisionId: doc.revisionId,
+    }, 201);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    return c.json({ error: { code: 'DOCS_CREATE_FAILED', message: msg } }, 500);
+  }
+});
+
+// PATCH /google/docs/:id - Batch update document
+google.patch('/docs/:id', async (c) => {
+  const configErr = requireGoogleConfig(c);
+  if (configErr) return c.json({ error: configErr.error }, 400);
+
+  const documentId = c.req.param('id');
+  const body = await c.req.json().catch(() => null);
+  if (!body || typeof body !== 'object') {
+    return c.json({ error: { code: 'INVALID_JSON', message: 'Invalid JSON body' } }, 400);
+  }
+
+  const data = body as Record<string, unknown>;
+  const requests = (data.requests as unknown[]) || [];
+  const accountId = (data.account_id as string) || undefined;
+
+  if (requests.length === 0) {
+    return c.json({ error: { code: 'VALIDATION', message: 'requests array is required and must not be empty' } }, 400);
+  }
+
+  try {
+    const integration = await getIntegration(c.env.DB, accountId);
+    if (!integration) {
+      return c.json({ error: { code: 'NO_ACCOUNT', message: 'No Google account connected' } }, 400);
+    }
+
+    const token = await getValidAccessToken(integration, c.env);
+    if (!token) {
+      return c.json({ error: { code: 'TOKEN_EXPIRED', message: 'Could not get valid access token' } }, 401);
+    }
+
+    const resp = await fetch(
+      `https://docs.googleapis.com/v1/documents/${documentId}:batchUpdate`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ requests }),
+      },
+    );
+
+    if (!resp.ok) {
+      const errBody = await resp.text();
+      return c.json({ error: { code: 'GOOGLE_API_ERROR', message: errBody } }, resp.status as 400);
+    }
+
+    const result = await resp.json();
+    return c.json({ ok: true, ...result as Record<string, unknown> });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    return c.json({ error: { code: 'DOCS_UPDATE_FAILED', message: msg } }, 500);
   }
 });
 

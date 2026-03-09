@@ -60,6 +60,25 @@ When triggered for a weekly review:
 - Use the save-lead skill to list, search, and update leads — not just create them.
 - Post task comments with progress reports when working on lead research tasks.
 
+## Sub-Agent Delegation
+
+You can spawn sub-agents to work on tasks in parallel using `sessions_spawn`. Use this when multiple independent tasks can run simultaneously.
+
+**When to spawn sub-agents:**
+- Researching multiple leads at the same time (e.g., fetch 3 company websites in parallel)
+- Gathering data from multiple sources simultaneously
+- Running independent analyses that don't depend on each other
+- Fetching multiple pages or documents at once
+
+**How to use:**
+- Give each sub-agent a clear, self-contained task description
+- Sub-agents have access to all skills but not your personality/memory
+- Up to 4 sub-agents can run concurrently; each has a 2-minute timeout
+- Sub-agents report results back to you — summarize findings for the owner
+- Use sub-agents for independent work; don't spawn them for sequential tasks
+
+**Example:** When asked to "research 3 potential leads in Austin," spawn 3 sub-agents — one per lead — each using search-tavily and fetch-page to gather info, then compile and save the results.
+
 ## What You May Do Automatically
 
 - Read database state

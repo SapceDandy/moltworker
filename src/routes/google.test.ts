@@ -230,4 +230,200 @@ describe('google routes', () => {
       expect(body.error.code).toBe('NO_ACCOUNT');
     });
   });
+
+  // ============================================================
+  // Google Drive
+  // ============================================================
+
+  describe('GET /google/drive/files', () => {
+    it('returns empty when no accounts connected', async () => {
+      const res = await req('/google/drive/files');
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as any;
+      expect(body.files).toEqual([]);
+      expect(body.message).toContain('No Google account');
+    });
+
+    it('returns 400 when Google not configured', async () => {
+      env = createMockEnv({ DB: mockD1.db });
+      const res = await req('/google/drive/files');
+      expect(res.status).toBe(400);
+    });
+  });
+
+  describe('GET /google/drive/files/:id', () => {
+    it('returns 400 when no account connected', async () => {
+      const res = await req('/google/drive/files/file-123');
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as any;
+      expect(body.error.code).toBe('NO_ACCOUNT');
+    });
+  });
+
+  describe('GET /google/drive/files/:id/content', () => {
+    it('returns 400 when no account connected', async () => {
+      const res = await req('/google/drive/files/file-123/content');
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as any;
+      expect(body.error.code).toBe('NO_ACCOUNT');
+    });
+  });
+
+  describe('POST /google/drive/files', () => {
+    it('returns 400 for invalid JSON', async () => {
+      const res = await req('/google/drive/files', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: 'not json',
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 400 when no account connected', async () => {
+      const res = await req('/google/drive/files', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Test File' }),
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as any;
+      expect(body.error.code).toBe('NO_ACCOUNT');
+    });
+  });
+
+  // ============================================================
+  // Google Sheets
+  // ============================================================
+
+  describe('GET /google/sheets/:id', () => {
+    it('returns 400 when no account connected', async () => {
+      const res = await req('/google/sheets/spreadsheet-123');
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as any;
+      expect(body.error.code).toBe('NO_ACCOUNT');
+    });
+  });
+
+  describe('PUT /google/sheets/:id', () => {
+    it('returns 400 for invalid JSON', async () => {
+      const res = await req('/google/sheets/spreadsheet-123', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: 'not json',
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 400 when range or values missing', async () => {
+      const res = await req('/google/sheets/spreadsheet-123', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ range: '', values: [] }),
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as any;
+      expect(body.error.code).toBe('VALIDATION');
+    });
+
+    it('returns 400 when no account connected', async () => {
+      const res = await req('/google/sheets/spreadsheet-123', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ range: 'Sheet1!A1:B2', values: [['a', 'b']] }),
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as any;
+      expect(body.error.code).toBe('NO_ACCOUNT');
+    });
+  });
+
+  describe('POST /google/sheets', () => {
+    it('returns 400 for invalid JSON', async () => {
+      const res = await req('/google/sheets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: 'not json',
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 400 when no account connected', async () => {
+      const res = await req('/google/sheets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'Test Sheet' }),
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as any;
+      expect(body.error.code).toBe('NO_ACCOUNT');
+    });
+  });
+
+  // ============================================================
+  // Google Docs
+  // ============================================================
+
+  describe('GET /google/docs/:id', () => {
+    it('returns 400 when no account connected', async () => {
+      const res = await req('/google/docs/doc-123');
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as any;
+      expect(body.error.code).toBe('NO_ACCOUNT');
+    });
+  });
+
+  describe('POST /google/docs', () => {
+    it('returns 400 for invalid JSON', async () => {
+      const res = await req('/google/docs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: 'not json',
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 400 when no account connected', async () => {
+      const res = await req('/google/docs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'Test Doc' }),
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as any;
+      expect(body.error.code).toBe('NO_ACCOUNT');
+    });
+  });
+
+  describe('PATCH /google/docs/:id', () => {
+    it('returns 400 for invalid JSON', async () => {
+      const res = await req('/google/docs/doc-123', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: 'not json',
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 400 when requests array is empty', async () => {
+      const res = await req('/google/docs/doc-123', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requests: [] }),
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as any;
+      expect(body.error.code).toBe('VALIDATION');
+    });
+
+    it('returns 400 when no account connected', async () => {
+      const res = await req('/google/docs/doc-123', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requests: [{ insertText: { location: { index: 1 }, text: 'hello' } }] }),
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as any;
+      expect(body.error.code).toBe('NO_ACCOUNT');
+    });
+  });
 });

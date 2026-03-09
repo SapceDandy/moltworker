@@ -233,6 +233,14 @@ config.agents = config.agents || {};
 config.agents.defaults = config.agents.defaults || {};
 config.agents.defaults.workspace = '/root/clawd';
 
+// Sub-agents: allow Kudjo to spawn parallel workers
+config.agents.defaults.subagents = {
+    maxConcurrent: 4,
+    maxSpawnDepth: 2,
+    maxChildrenPerAgent: 5,
+    runTimeoutSeconds: 120,
+};
+
 // Skills: enable all bundled skills, watch for changes
 config.skills = config.skills || {};
 config.skills.allowBundled = config.skills.allowBundled || ['*'];
