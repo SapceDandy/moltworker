@@ -3,6 +3,25 @@ import type { AppEnv } from '../types';
 
 const tasks = new Hono<AppEnv>();
 
+// Recalculate project percent_complete from task statuses
+async function recalcProjectProgress(db: D1Database, projectId: string | null): Promise<void> {
+  if (!projectId) return;
+  try {
+    const row = await db.prepare(
+      `SELECT COUNT(*) as total,
+              SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as done
+       FROM tasks WHERE project_id = ?`,
+    ).bind(projectId).first<{ total: number; done: number }>();
+    if (!row || row.total === 0) return;
+    const pct = Math.round((row.done / row.total) * 100);
+    await db.prepare(
+      'UPDATE projects SET percent_complete = ?, updated_at = ? WHERE id = ?',
+    ).bind(pct, new Date().toISOString(), projectId).run();
+  } catch (e) {
+    console.error('[tasks] recalcProjectProgress error:', e);
+  }
+}
+
 // GET /tasks - List tasks with optional filters
 tasks.get('/', async (c) => {
   try {
@@ -106,6 +125,9 @@ tasks.post('/', async (c) => {
       now,
     ).run();
 
+    const projectId = (data.project_id ?? '').toString() || null;
+    await recalcProjectProgress(c.env.DB, projectId);
+
     return c.json({ ok: true, id }, 201);
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Unknown error';
@@ -167,6 +189,14 @@ tasks.put('/:id', async (c) => {
       `UPDATE tasks SET ${sets.join(', ')} WHERE id = ?`,
     ).bind(...params).run();
 
+    // Recalculate project progress when status or project_id changes
+    if ('status' in data || 'project_id' in data) {
+      const updated = await c.env.DB.prepare('SELECT project_id FROM tasks WHERE id = ?').bind(id).first<{ project_id: string | null }>();
+      if (updated?.project_id) {
+        await recalcProjectProgress(c.env.DB, updated.project_id);
+      }
+    }
+
     return c.json({ ok: true, id });
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Unknown error';
@@ -179,12 +209,13 @@ tasks.put('/:id', async (c) => {
 tasks.delete('/:id', async (c) => {
   try {
     const id = c.req.param('id');
-    const existing = await c.env.DB.prepare('SELECT id FROM tasks WHERE id = ?').bind(id).first();
+    const existing = await c.env.DB.prepare('SELECT id, project_id FROM tasks WHERE id = ?').bind(id).first<{ id: string; project_id: string | null }>();
     if (!existing) {
       return c.json({ error: { code: 'NOT_FOUND', message: 'Task not found' } }, 404);
     }
 
     await c.env.DB.prepare('DELETE FROM tasks WHERE id = ?').bind(id).run();
+    await recalcProjectProgress(c.env.DB, existing.project_id);
     return c.json({ ok: true, id });
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Unknown error';
