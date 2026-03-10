@@ -68,6 +68,59 @@ export async function eveningRecap(env: MoltbotEnv): Promise<void> {
     progressData = { date: today, error: 'Failed to query progress' };
   }
 
+  // Auto-comment on tasks completed today (zero LLM cost — direct D1 inserts)
+  try {
+    const { results: completedTasks } = await env.DB.prepare(
+      `SELECT id, title FROM tasks WHERE completed_date LIKE ? AND status = 'done'`,
+    ).bind(`${today}%`).all<{ id: string; title: string }>();
+
+    for (const task of completedTasks) {
+      // Check if we already commented today to avoid duplicates
+      const existing = await env.DB.prepare(
+        `SELECT id FROM task_comments WHERE task_id = ? AND author = 'agent' AND comment_type = 'status_change' AND created_at LIKE ?`,
+      ).bind(task.id, `${today}%`).first();
+      if (!existing) {
+        await env.DB.prepare(
+          `INSERT INTO task_comments (id, task_id, author, author_name, content, comment_type, metadata, created_at, resolved_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).bind(
+          crypto.randomUUID(), task.id, 'agent', 'Kudjo',
+          `Completed on ${today}.`,
+          'status_change', null, new Date().toISOString(), null,
+        ).run();
+      }
+    }
+
+    // Flag at-risk tasks: in-progress with deadline within 2 days and no existing blocking comment
+    const twoDaysOut = new Date(Date.now() + 2 * 86400000).toISOString().split('T')[0];
+    const { results: atRiskTasks } = await env.DB.prepare(
+      `SELECT id, title, deadline FROM tasks
+       WHERE status IN ('todo', 'in_progress') AND deadline IS NOT NULL AND deadline <= ? AND deadline >= ?`,
+    ).bind(twoDaysOut, today).all<{ id: string; title: string; deadline: string }>();
+
+    for (const task of atRiskTasks) {
+      const existingBlocking = await env.DB.prepare(
+        `SELECT id FROM task_comments WHERE task_id = ? AND comment_type = 'blocking' AND resolved_at IS NULL`,
+      ).bind(task.id).first();
+      if (!existingBlocking) {
+        const daysLeft = Math.ceil((new Date(task.deadline).getTime() - Date.now()) / 86400000);
+        const label = daysLeft <= 0 ? 'overdue' : `due in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`;
+        await env.DB.prepare(
+          `INSERT INTO task_comments (id, task_id, author, author_name, content, comment_type, metadata, created_at, resolved_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).bind(
+          crypto.randomUUID(), task.id, 'agent', 'Kudjo',
+          `Deadline ${label} (${task.deadline}). Confirm scope/status before closing.`,
+          'blocking', null, new Date().toISOString(), null,
+        ).run();
+      }
+    }
+
+    console.log(`[CRON] Auto-commented: ${completedTasks.length} completed, ${atRiskTasks.length} at-risk`);
+  } catch (err) {
+    console.error('[CRON] Auto-comment failed:', err);
+  }
+
   // Generate recap via direct Anthropic Haiku call (bypasses OpenClaw system prompt)
   const calendarNote = progressData.tomorrow_calendar ? ' Flag tomorrow\'s calendar conflicts.' : '';
   const message = `Evening recap for ${today}. Summarize what got done, what's still open, and what should roll to tomorrow.${calendarNote}\nData:\n${JSON.stringify(progressData)}`;

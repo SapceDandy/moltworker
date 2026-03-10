@@ -161,6 +161,72 @@ describe('tasks routes', () => {
     });
   });
 
+  describe('PUT /tasks/:id blocking comments guard', () => {
+    beforeEach(() => {
+      mockD1.seed('tasks', [
+        { id: 't1', title: 'Task with blockers', status: 'in_progress', priority: 'high' },
+      ]);
+    });
+
+    it('blocks transition to done when unresolved blocking comments exist', async () => {
+      mockD1.seed('task_comments', [
+        { id: 'c1', task_id: 't1', author: 'agent', content: 'Must fix before closing', comment_type: 'blocking', created_at: '2026-01-01', resolved_at: null },
+      ]);
+      const res = await req('/tasks/t1', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'done' }),
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as any;
+      expect(body.error.code).toBe('BLOCKING_COMMENTS');
+      expect(body.error.unresolved_comments).toHaveLength(1);
+      expect(body.error.unresolved_comments[0].content).toBe('Must fix before closing');
+    });
+
+    it('allows transition to done when all blocking comments are resolved', async () => {
+      mockD1.seed('task_comments', [
+        { id: 'c1', task_id: 't1', author: 'agent', content: 'Fixed', comment_type: 'blocking', created_at: '2026-01-01', resolved_at: '2026-01-02' },
+      ]);
+      const res = await req('/tasks/t1', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'done' }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as any;
+      expect(body.ok).toBe(true);
+    });
+
+    it('allows transition to done when no blocking comments exist', async () => {
+      mockD1.seed('task_comments', [
+        { id: 'c1', task_id: 't1', author: 'user', content: 'Regular comment', comment_type: 'comment', created_at: '2026-01-01', resolved_at: null },
+      ]);
+      const res = await req('/tasks/t1', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'done' }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as any;
+      expect(body.ok).toBe(true);
+    });
+
+    it('allows non-done status changes with unresolved blocking comments', async () => {
+      mockD1.seed('task_comments', [
+        { id: 'c1', task_id: 't1', author: 'agent', content: 'Blocking', comment_type: 'blocking', created_at: '2026-01-01', resolved_at: null },
+      ]);
+      const res = await req('/tasks/t1', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'blocked' }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as any;
+      expect(body.ok).toBe(true);
+    });
+  });
+
   describe('DELETE /tasks/:id', () => {
     beforeEach(() => {
       mockD1.seed('tasks', [

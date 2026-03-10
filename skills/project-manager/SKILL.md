@@ -38,7 +38,9 @@ CRUD pattern: `GET /api/{resource}?filters`, `GET /api/{resource}/{id}`, `POST /
 `/api/reminders?status=pending&upcoming=true` — fields: title, description, remind_at(ISO), status(pending/done/snoozed), related_project_id, related_task_id, recurrence(daily/weekly/monthly)
 
 ## Comments
-`GET/POST /api/comments/{task_id}`, `DELETE /api/comments/{task_id}/{id}` — fields: content, author(user/agent), author_name, comment_type(comment/status_change/progress_report/action_request)
+`GET/POST /api/comments/{task_id}`, `DELETE /api/comments/{task_id}/{id}` — fields: content, author(user/agent), author_name, comment_type(comment/status_change/progress_report/action_request/blocking)
+Filter: `GET /api/comments/{task_id}?unresolved=true` — returns only unresolved blocking comments.
+Resolve: `PUT /api/comments/{task_id}/{id}/resolve` — resolves a blocking comment. Tasks with unresolved blocking comments cannot move to done.
 
 ## Actions
 `/api/actions?status=pending&action_type=email_draft` — Create: `{ "action_type": "email_draft", "title": "...", "content": "{...}" }`. Approve: `PUT /api/actions/{id}/approve`. NEVER send emails directly.

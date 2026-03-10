@@ -137,4 +137,72 @@ describe('comments routes', () => {
       expect(res.status).toBe(404);
     });
   });
+
+  describe('GET /comments/:taskId?unresolved=true', () => {
+    it('returns only unresolved blocking comments', async () => {
+      mockD1.seed('task_comments', [
+        { id: 'c1', task_id: 't1', author: 'agent', content: 'Regular comment', comment_type: 'comment', created_at: '2026-01-01T10:00:00Z', resolved_at: null },
+        { id: 'c2', task_id: 't1', author: 'agent', content: 'Blocking unresolved', comment_type: 'blocking', created_at: '2026-01-01T11:00:00Z', resolved_at: null },
+        { id: 'c3', task_id: 't1', author: 'agent', content: 'Blocking resolved', comment_type: 'blocking', created_at: '2026-01-01T12:00:00Z', resolved_at: '2026-01-01T13:00:00Z' },
+      ]);
+      const res = await req('/comments/t1?unresolved=true');
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as any;
+      expect(body.comments).toHaveLength(1);
+      expect(body.comments[0].id).toBe('c2');
+    });
+
+    it('returns all comments when unresolved is not set', async () => {
+      mockD1.seed('task_comments', [
+        { id: 'c1', task_id: 't1', author: 'agent', content: 'Regular', comment_type: 'comment', created_at: '2026-01-01T10:00:00Z', resolved_at: null },
+        { id: 'c2', task_id: 't1', author: 'agent', content: 'Blocking', comment_type: 'blocking', created_at: '2026-01-01T11:00:00Z', resolved_at: null },
+      ]);
+      const res = await req('/comments/t1');
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as any;
+      expect(body.comments).toHaveLength(2);
+    });
+  });
+
+  describe('PUT /comments/:taskId/:commentId/resolve', () => {
+    it('resolves a blocking comment', async () => {
+      mockD1.seed('task_comments', [
+        { id: 'c1', task_id: 't1', author: 'agent', content: 'Must fix', comment_type: 'blocking', created_at: '2026-01-01T10:00:00Z', resolved_at: null },
+      ]);
+      const res = await req('/comments/t1/c1/resolve', { method: 'PUT' });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as any;
+      expect(body.ok).toBe(true);
+      expect(body.resolved_at).toBeDefined();
+
+      const rows = mockD1.getAll('task_comments');
+      expect(rows[0].resolved_at).toBeDefined();
+    });
+
+    it('returns 404 for non-existent comment', async () => {
+      const res = await req('/comments/t1/nonexistent/resolve', { method: 'PUT' });
+      expect(res.status).toBe(404);
+    });
+
+    it('returns 400 for non-blocking comment', async () => {
+      mockD1.seed('task_comments', [
+        { id: 'c1', task_id: 't1', author: 'user', content: 'Regular', comment_type: 'comment', created_at: '2026-01-01', resolved_at: null },
+      ]);
+      const res = await req('/comments/t1/c1/resolve', { method: 'PUT' });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as any;
+      expect(body.error.code).toBe('NOT_BLOCKING');
+    });
+
+    it('returns ok for already resolved comment', async () => {
+      mockD1.seed('task_comments', [
+        { id: 'c1', task_id: 't1', author: 'agent', content: 'Done', comment_type: 'blocking', created_at: '2026-01-01', resolved_at: '2026-01-02' },
+      ]);
+      const res = await req('/comments/t1/c1/resolve', { method: 'PUT' });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as any;
+      expect(body.ok).toBe(true);
+      expect(body.already_resolved).toBe(true);
+    });
+  });
 });

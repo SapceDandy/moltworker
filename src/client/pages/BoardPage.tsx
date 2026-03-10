@@ -25,6 +25,8 @@ import {
   getTask,
   listComments,
   createComment,
+  resolveComment,
+  ApiError,
   type Task,
   type Project,
   type Blocker,
@@ -268,6 +270,7 @@ function CommentsThread({ taskId }: { taskId: string }) {
           comment_type: 'comment',
           metadata: null,
           created_at: new Date().toISOString(),
+          resolved_at: null,
         },
       ]);
       setNewComment('');
@@ -278,30 +281,74 @@ function CommentsThread({ taskId }: { taskId: string }) {
     }
   };
 
+  const handleResolve = async (commentId: string) => {
+    try {
+      const res = await resolveComment(taskId, commentId);
+      if (res.ok) {
+        setComments((prev) =>
+          prev.map((c) =>
+            c.id === commentId ? { ...c, resolved_at: res.resolved_at || new Date().toISOString() } : c,
+          ),
+        );
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const unresolvedCount = comments.filter(
+    (c) => c.comment_type === 'blocking' && !c.resolved_at,
+  ).length;
+
   return (
     <div className="comments-section">
-      <span className="detail-label">Comments ({comments.length})</span>
+      <span className="detail-label">
+        Comments ({comments.length})
+        {unresolvedCount > 0 && (
+          <span className="blocking-count"> — {unresolvedCount} blocking</span>
+        )}
+      </span>
       <div className="comments-list">
         {!loaded && <div className="comment-loading">Loading...</div>}
         {loaded && comments.length === 0 && (
           <div className="comment-empty">No comments yet</div>
         )}
-        {comments.map((c) => (
-          <div key={c.id} className={`comment-item ${c.author === 'agent' ? 'comment-agent' : 'comment-user'}`}>
-            <div className="comment-header">
-              <span className={`comment-author ${c.author === 'agent' ? 'author-agent' : ''}`}>
-                {c.author === 'agent' ? (c.author_name || 'Kudjo') : 'You'}
-              </span>
-              {c.comment_type !== 'comment' && (
-                <span className="comment-type-badge">{c.comment_type.replace(/_/g, ' ')}</span>
+        {comments.map((c) => {
+          const isBlocking = c.comment_type === 'blocking';
+          const isUnresolved = isBlocking && !c.resolved_at;
+          return (
+            <div
+              key={c.id}
+              className={`comment-item ${c.author === 'agent' ? 'comment-agent' : 'comment-user'}${isUnresolved ? ' comment-blocking' : ''}${isBlocking && c.resolved_at ? ' comment-resolved' : ''}`}
+            >
+              <div className="comment-header">
+                <span className={`comment-author ${c.author === 'agent' ? 'author-agent' : ''}`}>
+                  {c.author === 'agent' ? (c.author_name || 'Kudjo') : 'You'}
+                </span>
+                {isBlocking && (
+                  <span className={`comment-type-badge ${isUnresolved ? 'badge-blocking' : 'badge-resolved'}`}>
+                    {isUnresolved ? 'blocking' : 'resolved'}
+                  </span>
+                )}
+                {!isBlocking && c.comment_type !== 'comment' && (
+                  <span className="comment-type-badge">{c.comment_type.replace(/_/g, ' ')}</span>
+                )}
+                <span className="comment-time">
+                  {new Date(c.created_at).toLocaleString()}
+                </span>
+              </div>
+              <div className="comment-body">{c.content}</div>
+              {isUnresolved && (
+                <button
+                  className="btn-resolve"
+                  onClick={() => handleResolve(c.id)}
+                >
+                  Resolve
+                </button>
               )}
-              <span className="comment-time">
-                {new Date(c.created_at).toLocaleString()}
-              </span>
             </div>
-            <div className="comment-body">{c.content}</div>
-          </div>
-        ))}
+          );
+        })}
       </div>
       <div className="comment-input">
         <textarea
@@ -748,7 +795,13 @@ export default function BoardPage() {
 
       try {
         await updateTask(taskId, { status: targetColumn });
-      } catch {
+      } catch (err: unknown) {
+        // Show blocking comments error to user
+        if (err instanceof ApiError && err.code === 'BLOCKING_COMMENTS') {
+          const comments = (err.details.unresolved_comments as Array<{ content: string }>) || [];
+          const items = comments.map((c) => `• ${c.content}`).join('\n');
+          alert(`${err.message}\n\n${items}\n\nOpen the task to resolve blocking comments first.`);
+        }
         // Revert on error
         loadData();
       }

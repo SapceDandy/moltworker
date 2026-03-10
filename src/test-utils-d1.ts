@@ -151,6 +151,22 @@ export function createMockD1(): MockD1 {
             continue;
           }
 
+          // col IS NULL
+          const isNullMatch = trimPart.match(/^(\w+(?:\.\w+)?)\s+IS\s+NULL$/i);
+          if (isNullMatch) {
+            const col = isNullMatch[1].split('.').pop()!;
+            rows = rows.filter((r) => r[col] === null || r[col] === undefined);
+            continue;
+          }
+
+          // col IS NOT NULL
+          const isNotNullMatch = trimPart.match(/^(\w+(?:\.\w+)?)\s+IS\s+NOT\s+NULL$/i);
+          if (isNotNullMatch) {
+            const col = isNotNullMatch[1].split('.').pop()!;
+            rows = rows.filter((r) => r[col] !== null && r[col] !== undefined);
+            continue;
+          }
+
           // col LIKE ? (bind param)
           const likeMatch = trimPart.match(/^(\w+(?:\.\w+)?)\s+LIKE\s+\?$/i);
           if (likeMatch) {

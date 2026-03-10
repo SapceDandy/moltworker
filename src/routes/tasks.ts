@@ -171,6 +171,22 @@ tasks.put('/:id', async (c) => {
       params.push(Number(data.sort_order) || 0);
     }
 
+    // Block transition to done if there are unresolved blocking comments
+    if (data.status === 'done') {
+      const { results: unresolvedComments } = await c.env.DB.prepare(
+        "SELECT id, content FROM task_comments WHERE task_id = ? AND comment_type = 'blocking' AND resolved_at IS NULL",
+      ).bind(id).all();
+      if (unresolvedComments.length > 0) {
+        return c.json({
+          error: {
+            code: 'BLOCKING_COMMENTS',
+            message: `Cannot mark as done: ${unresolvedComments.length} unresolved blocking comment(s)`,
+            unresolved_comments: unresolvedComments,
+          },
+        }, 400);
+      }
+    }
+
     // Auto-set completed_date when status changes to done
     if (data.status === 'done' && !('completed_date' in data)) {
       sets.push('completed_date = ?');

@@ -143,6 +143,17 @@ export async function triggerSync(): Promise<SyncResponse> {
 // Routes are mounted at /api/* (not /api/admin/*)
 // ============================================================
 
+export class ApiError extends Error {
+  code: string;
+  details: Record<string, unknown>;
+  constructor(message: string, code: string, details: Record<string, unknown> = {}) {
+    super(message);
+    this.name = 'ApiError';
+    this.code = code;
+    this.details = details;
+  }
+}
+
 async function execApi<T>(path: string, options: globalThis.RequestInit = {}): Promise<T> {
   const response = await fetch(`/api${path}`, {
     ...options,
@@ -160,10 +171,16 @@ async function execApi<T>(path: string, options: globalThis.RequestInit = {}): P
   const data = (await response.json()) as T & { error?: unknown };
 
   if (!response.ok) {
-    const errMsg = typeof data.error === 'string'
-      ? data.error
-      : (data.error as Record<string, string>)?.message || `API error: ${response.status}`;
-    throw new Error(errMsg);
+    const errData = data.error as Record<string, unknown> | string | undefined;
+    if (typeof errData === 'object' && errData !== null) {
+      throw new ApiError(
+        (errData.message as string) || `API error: ${response.status}`,
+        (errData.code as string) || 'UNKNOWN',
+        errData,
+      );
+    }
+    const errMsg = typeof errData === 'string' ? errData : `API error: ${response.status}`;
+    throw new ApiError(errMsg, 'UNKNOWN');
   }
 
   return data;
@@ -270,6 +287,7 @@ export interface TaskComment {
   comment_type: string;
   metadata: string | null;
   created_at: string;
+  resolved_at: string | null;
 }
 
 export interface Lead {
@@ -521,6 +539,10 @@ export async function createComment(taskId: string, data: { content: string; aut
 
 export async function deleteComment(taskId: string, commentId: string): Promise<{ ok: boolean; id: string }> {
   return execApi(`/comments/${taskId}/${commentId}`, { method: 'DELETE' });
+}
+
+export async function resolveComment(taskId: string, commentId: string): Promise<{ ok: boolean; id: string; resolved_at?: string }> {
+  return execApi(`/comments/${taskId}/${commentId}/resolve`, { method: 'PUT' });
 }
 
 // --- Leads ---
