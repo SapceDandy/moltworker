@@ -10,6 +10,15 @@ import { sendDiscordDM, extractAssistantReply } from './discord';
 export async function weeklyReview(env: MoltbotEnv): Promise<void> {
   console.log('[CRON] Running weekly review');
 
+  // Skip if no active projects — avoids booting sandbox + Claude API call
+  const projectCount = await env.DB.prepare(
+    "SELECT COUNT(*) as c FROM projects WHERE status = 'active'",
+  ).first<{ c: number }>();
+  if (!projectCount?.c) {
+    console.log('[CRON] No active projects, skipping weekly review');
+    return;
+  }
+
   const sleepAfter = env.SANDBOX_SLEEP_AFTER?.toLowerCase() || 'never';
   const options: SandboxOptions =
     sleepAfter === 'never' ? { keepAlive: true } : { sleepAfter };
@@ -64,29 +73,34 @@ export async function weeklyReview(env: MoltbotEnv): Promise<void> {
          ORDER BY days_open DESC`,
       ).all(),
 
-      // This week's snapshots for trending
+      // Weekly trend: only first and last snapshot per project (shows delta, not raw rows)
       env.DB.prepare(
-        `SELECT s.*, p.name as project_name
+        `SELECT project_id, p.name as project_name,
+          MIN(snapshot_date) as week_start_date,
+          MAX(snapshot_date) as week_end_date,
+          (SELECT s1.percent_complete FROM progress_snapshots s1 WHERE s1.project_id = s.project_id AND s1.snapshot_date = MIN(s.snapshot_date)) as start_pct,
+          (SELECT s2.percent_complete FROM progress_snapshots s2 WHERE s2.project_id = s.project_id AND s2.snapshot_date = MAX(s.snapshot_date)) as end_pct,
+          (SELECT s2.health FROM progress_snapshots s2 WHERE s2.project_id = s.project_id AND s2.snapshot_date = MAX(s.snapshot_date)) as current_health
          FROM progress_snapshots s LEFT JOIN projects p ON s.project_id = p.id
          WHERE s.snapshot_date >= date(?, '-7 days')
-         ORDER BY s.snapshot_date ASC`,
+         GROUP BY s.project_id`,
       ).bind(today).all(),
     ]);
 
-    reviewData = {
-      week_ending: today,
-      projects: allProjects.results,
-      completed_this_week: weeklyCompleted.results,
-      stalled_projects: stalledProjects.results,
-      old_blockers: oldBlockers.results,
-      weekly_snapshots: weekSnapshots.results,
-    };
+    // Build payload, omitting empty arrays to reduce token count
+    reviewData = { week_ending: today } as Record<string, unknown>;
+    if (allProjects.results.length) reviewData.projects = allProjects.results;
+    if (weeklyCompleted.results.length) reviewData.completed_this_week = weeklyCompleted.results;
+    if (stalledProjects.results.length) reviewData.stalled_projects = stalledProjects.results;
+    if (oldBlockers.results.length) reviewData.old_blockers = oldBlockers.results;
+    if (weekSnapshots.results.length) reviewData.weekly_trend = weekSnapshots.results;
   } catch (err) {
     console.error('[CRON] Weekly review query failed:', err);
     reviewData = { week_ending: today, error: 'Failed to query weekly data' };
   }
 
-  const message = `[SYSTEM] Weekly review trigger for week ending ${today}. Here is the weekly data:\n\n${JSON.stringify(reviewData, null, 2)}\n\nGenerate a weekly review for Devon following SOUL.md rules: summarize per-project progress (% complete, health), identify slipping/stalled projects, flag blockers open 3+ days, recommend focus areas for next week, recommend what to pause/defer/cut. Be thorough but structured.`;
+  // Compact JSON to reduce token cost; SOUL.md has full weekly review rules
+  const message = `[SYSTEM] Weekly review for week ending ${today}.\n${JSON.stringify(reviewData)}\nFollow SOUL.md weekly review rules.`;
 
   const result = await sendSessionMessage(sandbox, message, env.MOLTBOT_GATEWAY_TOKEN);
   console.log('[CRON] Weekly review sent:', result.ok, result.status);

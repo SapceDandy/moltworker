@@ -30,6 +30,7 @@ export async function sendSessionMessage(
         body: JSON.stringify({
           model: 'openclaw:main',
           messages: [{ role: 'user', content: message }],
+          max_tokens: 1024,
         }),
       }),
       MOLTBOT_PORT,

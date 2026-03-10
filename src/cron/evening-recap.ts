@@ -11,6 +11,15 @@ import { sendDiscordDM, extractAssistantReply } from './discord';
 export async function eveningRecap(env: MoltbotEnv): Promise<void> {
   console.log('[CRON] Running evening recap');
 
+  // Skip if no active projects — avoids booting sandbox + Claude API call
+  const projectCount = await env.DB.prepare(
+    "SELECT COUNT(*) as c FROM projects WHERE status = 'active'",
+  ).first<{ c: number }>();
+  if (!projectCount?.c) {
+    console.log('[CRON] No active projects, skipping evening recap');
+    return;
+  }
+
   const sleepAfter = env.SANDBOX_SLEEP_AFTER?.toLowerCase() || 'never';
   const options: SandboxOptions =
     sleepAfter === 'never' ? { keepAlive: true } : { sleepAfter };
@@ -55,21 +64,21 @@ export async function eveningRecap(env: MoltbotEnv): Promise<void> {
       console.error('[CRON] Tomorrow calendar fetch failed:', err);
     }
 
-    progressData = {
-      date: today,
-      completed_today: completedToday.results,
-      still_open: stillOpen.results,
-      new_blockers: newBlockers.results,
-      morning_plan: morningCheckin,
-      tomorrow_calendar: tomorrowCalendar.length > 0 ? tomorrowCalendar : undefined,
-    };
+    // Build payload, omitting empty arrays to reduce token count
+    progressData = { date: today } as Record<string, unknown>;
+    if (completedToday.results.length) progressData.completed_today = completedToday.results;
+    if (stillOpen.results.length) progressData.still_open = stillOpen.results;
+    if (newBlockers.results.length) progressData.new_blockers = newBlockers.results;
+    if (morningCheckin) progressData.morning_plan = morningCheckin;
+    if (tomorrowCalendar.length) progressData.tomorrow_calendar = tomorrowCalendar;
   } catch (err) {
     console.error('[CRON] Evening query failed:', err);
     progressData = { date: today, error: 'Failed to query progress' };
   }
 
-  const calendarNote = (progressData as Record<string, unknown>).tomorrow_calendar ? ' Preview tomorrow\'s calendar and flag any early meetings or scheduling conflicts with open tasks.' : '';
-  const message = `[SYSTEM] Evening recap trigger for ${today}. Here is today's progress:\n\n${JSON.stringify(progressData, null, 2)}\n\nAsk Devon for an end-of-day update. Summarize what got done, what's still open, and what should roll to tomorrow.${calendarNote} Log the evening check-in. Keep it conversational and brief.`;
+  // Compact JSON to reduce token cost; SOUL.md has full evening recap rules
+  const calendarNote = progressData.tomorrow_calendar ? ' Flag tomorrow\'s calendar conflicts.' : '';
+  const message = `[SYSTEM] Evening recap for ${today}.\n${JSON.stringify(progressData)}\nFollow SOUL.md evening recap rules.${calendarNote}`;
 
   const result = await sendSessionMessage(sandbox, message, env.MOLTBOT_GATEWAY_TOKEN);
   console.log('[CRON] Evening recap sent:', result.ok, result.status);

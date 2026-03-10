@@ -12,6 +12,15 @@ import { sendDiscordDM, extractAssistantReply } from './discord';
 export async function morningBrief(env: MoltbotEnv): Promise<void> {
   console.log('[CRON] Running morning brief');
 
+  // Skip if no active projects — avoids booting sandbox + Claude API call
+  const projectCount = await env.DB.prepare(
+    "SELECT COUNT(*) as c FROM projects WHERE status = 'active'",
+  ).first<{ c: number }>();
+  if (!projectCount?.c) {
+    console.log('[CRON] No active projects, skipping morning brief');
+    return;
+  }
+
   const sleepAfter = env.SANDBOX_SLEEP_AFTER?.toLowerCase() || 'never';
   const options: SandboxOptions =
     sleepAfter === 'never' ? { keepAlive: true } : { sleepAfter };
@@ -75,15 +84,14 @@ export async function morningBrief(env: MoltbotEnv): Promise<void> {
       console.error('[CRON] Calendar events fetch failed:', err);
     }
 
-    dashboardData = {
-      date: today,
-      active_projects: activeProjects.results,
-      overdue_tasks: overdueTasks.results,
-      today_tasks: todayTasks.results,
-      open_blockers: openBlockers.results,
-      due_reminders: dueReminders.results,
-      calendar_events: calendarEvents.length > 0 ? calendarEvents : undefined,
-    };
+    // Build payload, omitting empty arrays to reduce token count
+    dashboardData = { date: today } as Record<string, unknown>;
+    if (activeProjects.results.length) dashboardData.active_projects = activeProjects.results;
+    if (overdueTasks.results.length) dashboardData.overdue_tasks = overdueTasks.results;
+    if (todayTasks.results.length) dashboardData.today_tasks = todayTasks.results;
+    if (openBlockers.results.length) dashboardData.open_blockers = openBlockers.results;
+    if (dueReminders.results.length) dashboardData.due_reminders = dueReminders.results;
+    if (calendarEvents.length) dashboardData.calendar_events = calendarEvents;
   } catch (err) {
     console.error('[CRON] Dashboard query failed:', err);
     dashboardData = { date: today, error: 'Failed to query dashboard' };
@@ -117,9 +125,9 @@ export async function morningBrief(env: MoltbotEnv): Promise<void> {
     console.error('[CRON] Snapshot failed:', err);
   }
 
-  // Send to OpenClaw session
-  const calendarNote = (dashboardData as Record<string, unknown>).calendar_events ? ' Include calendar events in schedule awareness — flag conflicts between meetings and deep work blocks.' : '';
-  const message = `[SYSTEM] Morning brief trigger for ${today}. Here is today's dashboard data:\n\n${JSON.stringify(dashboardData, null, 2)}\n\nGenerate a concise morning brief for Devon following SOUL.md rules: top 3-5 priorities, overdue items, open blockers, nearest deadlines, and any due reminders.${calendarNote} Keep it under 15 lines.`;
+  // Send to OpenClaw session (compact JSON to reduce token cost; SOUL.md has full brief rules)
+  const calendarNote = dashboardData.calendar_events ? ' Flag calendar conflicts.' : '';
+  const message = `[SYSTEM] Morning brief for ${today}.\n${JSON.stringify(dashboardData)}\nFollow SOUL.md morning brief rules.${calendarNote}`;
 
   const result = await sendSessionMessage(sandbox, message, env.MOLTBOT_GATEWAY_TOKEN);
   console.log('[CRON] Morning brief sent:', result.ok, result.status);
