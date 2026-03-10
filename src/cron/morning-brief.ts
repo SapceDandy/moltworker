@@ -137,11 +137,12 @@ export async function morningBrief(env: MoltbotEnv): Promise<void> {
     }
   }
 
-  // Log the check-in
+  // Log the check-in (store actual brief text for dashboard visibility)
   try {
+    const summary = result.ok ? result.text : `[FAILED] ${result.text}`;
     await env.DB.prepare(
       `INSERT INTO daily_checkins (id, checkin_date, checkin_type, summary, created_at) VALUES (?, ?, ?, ?, ?)`,
-    ).bind(crypto.randomUUID(), today, 'morning_brief', 'Auto-generated morning brief', new Date().toISOString()).run();
+    ).bind(crypto.randomUUID(), today, 'morning_brief', summary.slice(0, 4000), new Date().toISOString()).run();
   } catch (err) {
     console.error('[CRON] Check-in log failed:', err);
   }
@@ -153,7 +154,7 @@ export async function morningBrief(env: MoltbotEnv): Promise<void> {
     ).bind(
       crypto.randomUUID(),
       'morning_brief_sent',
-      JSON.stringify({ date: today, haiku_ok: result.ok }),
+      JSON.stringify({ date: today, haiku_ok: result.ok, error: result.ok ? undefined : result.text }),
       'cron',
       new Date().toISOString(),
     ).run();

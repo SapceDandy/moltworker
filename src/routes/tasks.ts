@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
+import { notifyTaskDone } from '../notifications';
 
 const tasks = new Hono<AppEnv>();
 
@@ -140,7 +141,7 @@ tasks.post('/', async (c) => {
 tasks.put('/:id', async (c) => {
   try {
     const id = c.req.param('id');
-    const existing = await c.env.DB.prepare('SELECT id FROM tasks WHERE id = ?').bind(id).first();
+    const existing = await c.env.DB.prepare('SELECT id, title, status, project_id FROM tasks WHERE id = ?').bind(id).first<{ id: string; title: string; status: string; project_id: string | null }>();
     if (!existing) {
       return c.json({ error: { code: 'NOT_FOUND', message: 'Task not found' } }, 404);
     }
@@ -211,6 +212,17 @@ tasks.put('/:id', async (c) => {
       if (updated?.project_id) {
         await recalcProjectProgress(c.env.DB, updated.project_id);
       }
+    }
+
+    // Notify owner via Discord DM when a task is marked done
+    if (data.status === 'done' && existing.status !== 'done') {
+      const actor = c.get('accessUser')?.email || 'unknown';
+      // Lookup project name for the notification (best-effort)
+      const projRow = existing.project_id
+        ? await c.env.DB.prepare('SELECT name FROM projects WHERE id = ?').bind(existing.project_id).first<{ name: string }>().catch(() => null)
+        : null;
+      const p = notifyTaskDone(c.env, { title: existing.title, project_name: projRow?.name }, actor);
+      if (c.executionCtx?.waitUntil) c.executionCtx.waitUntil(p); else p.catch(() => {});
     }
 
     return c.json({ ok: true, id });

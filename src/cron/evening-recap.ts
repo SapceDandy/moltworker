@@ -148,7 +148,7 @@ export async function eveningRecap(env: MoltbotEnv): Promise<void> {
     ).bind(
       crypto.randomUUID(),
       'evening_recap_sent',
-      JSON.stringify({ date: today, haiku_ok: result.ok }),
+      JSON.stringify({ date: today, haiku_ok: result.ok, error: result.ok ? undefined : result.text }),
       'cron',
       new Date().toISOString(),
     ).run();

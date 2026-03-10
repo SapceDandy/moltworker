@@ -3,64 +3,120 @@ import { MOLTBOT_PORT } from '../config';
 import type { MoltbotEnv } from '../types';
 
 const HAIKU_MODEL = 'claude-3-5-haiku-20241022';
+const OPENAI_MINI_MODEL = 'gpt-4o-mini';
 const CRON_SYSTEM_PROMPT =
   'You are Kudjo, a concise executive assistant. Respond with bullet points. Keep under 15 lines. Be direct, no fluff.';
 
+/** Call Anthropic Messages API */
+async function callAnthropic(
+  url: string, apiKey: string, model: string, message: string,
+): Promise<{ ok: boolean; text: string }> {
+  console.log(`[rpc] Calling Anthropic at ${url} model=${model}`);
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model, max_tokens: 1024, system: CRON_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: message }],
+    }),
+  });
+  if (!resp.ok) {
+    const err = await resp.text().catch(() => '');
+    console.error(`[rpc] Anthropic API error ${resp.status}:`, err.slice(0, 500));
+    return { ok: false, text: `Anthropic API error ${resp.status}: ${err.slice(0, 200)}` };
+  }
+  const data = (await resp.json()) as { content?: Array<{ text?: string }> };
+  return { ok: true, text: data.content?.[0]?.text || '' };
+}
+
+/** Call OpenAI-compatible Chat Completions API (works with OpenAI, Workers AI, etc.) */
+async function callOpenAI(
+  url: string, apiKey: string, model: string, message: string,
+): Promise<{ ok: boolean; text: string }> {
+  console.log(`[rpc] Calling OpenAI-compat at ${url} model=${model}`);
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model, max_tokens: 1024,
+      messages: [
+        { role: 'system', content: CRON_SYSTEM_PROMPT },
+        { role: 'user', content: message },
+      ],
+    }),
+  });
+  if (!resp.ok) {
+    const err = await resp.text().catch(() => '');
+    console.error(`[rpc] OpenAI-compat API error ${resp.status}:`, err.slice(0, 500));
+    return { ok: false, text: `OpenAI API error ${resp.status}: ${err.slice(0, 200)}` };
+  }
+  const data = (await resp.json()) as { choices?: Array<{ message?: { content?: string } }> };
+  return { ok: true, text: data.choices?.[0]?.message?.content || '' };
+}
+
 /**
- * Call Anthropic Messages API directly with Haiku for cost-efficient cron briefs.
- * Bypasses OpenClaw gateway (saves ~14,700 system prompt tokens per call).
- * Falls back gracefully if no API key is configured.
+ * Generate a cron brief using the best available AI provider.
+ * Supports: CF AI Gateway (with model override), legacy AI Gateway,
+ * direct Anthropic, native CF AI Gateway, and direct OpenAI.
  */
 export async function generateCronBrief(
   message: string,
   env: MoltbotEnv,
 ): Promise<{ ok: boolean; text: string }> {
-  let apiKey: string | undefined;
-  let baseUrl = 'https://api.anthropic.com';
-
-  // Determine API key and base URL from available env vars
-  if (env.AI_GATEWAY_API_KEY && env.AI_GATEWAY_BASE_URL) {
-    apiKey = env.AI_GATEWAY_API_KEY;
-    baseUrl = env.AI_GATEWAY_BASE_URL.replace(/\/+$/, '');
-  } else if (env.ANTHROPIC_API_KEY) {
-    apiKey = env.ANTHROPIC_API_KEY;
-    if (env.ANTHROPIC_BASE_URL) baseUrl = env.ANTHROPIC_BASE_URL.replace(/\/+$/, '');
-  }
-
-  if (!apiKey && env.CLOUDFLARE_AI_GATEWAY_API_KEY && env.CF_AI_GATEWAY_ACCOUNT_ID && env.CF_AI_GATEWAY_GATEWAY_ID) {
-    apiKey = env.CLOUDFLARE_AI_GATEWAY_API_KEY;
-    baseUrl = `https://gateway.ai.cloudflare.com/v1/${env.CF_AI_GATEWAY_ACCOUNT_ID}/${env.CF_AI_GATEWAY_GATEWAY_ID}/anthropic`;
-  }
-
-  if (!apiKey) {
-    return { ok: false, text: 'No Anthropic API key configured for direct cron calls' };
-  }
-
   try {
-    const resp = await fetch(`${baseUrl}/v1/messages`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: HAIKU_MODEL,
-        max_tokens: 1024,
-        system: CRON_SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: message }],
-      }),
-    });
+    // 1. CF AI Gateway with explicit model override (highest priority — matches container config)
+    if (env.CF_AI_GATEWAY_MODEL && env.CLOUDFLARE_AI_GATEWAY_API_KEY &&
+        env.CF_AI_GATEWAY_ACCOUNT_ID && env.CF_AI_GATEWAY_GATEWAY_ID) {
+      const raw = env.CF_AI_GATEWAY_MODEL;
+      const slashIdx = raw.indexOf('/');
+      const gwProvider = slashIdx > 0 ? raw.substring(0, slashIdx) : 'anthropic';
+      const modelId = slashIdx > 0 ? raw.substring(slashIdx + 1) : raw;
+      let gwBase = `https://gateway.ai.cloudflare.com/v1/${env.CF_AI_GATEWAY_ACCOUNT_ID}/${env.CF_AI_GATEWAY_GATEWAY_ID}/${gwProvider}`;
+      if (gwProvider === 'workers-ai') gwBase += '/v1';
 
-    if (!resp.ok) {
-      const err = await resp.text().catch(() => '');
-      console.error(`[rpc] Anthropic API error ${resp.status}:`, err);
-      return { ok: false, text: `API error ${resp.status}` };
+      console.log(`[rpc] Using CF AI Gateway model override: provider=${gwProvider} model=${modelId}`);
+      if (gwProvider === 'anthropic') {
+        return await callAnthropic(`${gwBase}/v1/messages`, env.CLOUDFLARE_AI_GATEWAY_API_KEY, modelId, message);
+      }
+      return await callOpenAI(`${gwBase}/chat/completions`, env.CLOUDFLARE_AI_GATEWAY_API_KEY, modelId, message);
     }
 
-    const data = (await resp.json()) as { content?: Array<{ text?: string }> };
-    const text = data.content?.[0]?.text || '';
-    return { ok: true, text };
+    // 2. Legacy AI Gateway (routes through Anthropic base URL)
+    if (env.AI_GATEWAY_API_KEY && env.AI_GATEWAY_BASE_URL) {
+      const baseUrl = env.AI_GATEWAY_BASE_URL.replace(/\/+$/, '');
+      console.log('[rpc] Using legacy AI Gateway');
+      return await callAnthropic(`${baseUrl}/v1/messages`, env.AI_GATEWAY_API_KEY, HAIKU_MODEL, message);
+    }
+
+    // 3. Direct Anthropic
+    if (env.ANTHROPIC_API_KEY) {
+      const baseUrl = env.ANTHROPIC_BASE_URL?.replace(/\/+$/, '') || 'https://api.anthropic.com';
+      console.log('[rpc] Using direct Anthropic');
+      return await callAnthropic(`${baseUrl}/v1/messages`, env.ANTHROPIC_API_KEY, HAIKU_MODEL, message);
+    }
+
+    // 4. Native CF AI Gateway (no model override — default to Anthropic Haiku)
+    if (env.CLOUDFLARE_AI_GATEWAY_API_KEY && env.CF_AI_GATEWAY_ACCOUNT_ID && env.CF_AI_GATEWAY_GATEWAY_ID) {
+      const baseUrl = `https://gateway.ai.cloudflare.com/v1/${env.CF_AI_GATEWAY_ACCOUNT_ID}/${env.CF_AI_GATEWAY_GATEWAY_ID}/anthropic`;
+      console.log('[rpc] Using native CF AI Gateway (Anthropic)');
+      return await callAnthropic(`${baseUrl}/v1/messages`, env.CLOUDFLARE_AI_GATEWAY_API_KEY, HAIKU_MODEL, message);
+    }
+
+    // 5. Direct OpenAI
+    if (env.OPENAI_API_KEY) {
+      console.log('[rpc] Using direct OpenAI');
+      return await callOpenAI('https://api.openai.com/v1/chat/completions', env.OPENAI_API_KEY, OPENAI_MINI_MODEL, message);
+    }
+
+    console.error('[rpc] No API key configured for cron briefs');
+    return { ok: false, text: 'No API key configured for cron briefs' };
   } catch (err) {
     console.error('[rpc] generateCronBrief failed:', err);
     return { ok: false, text: String(err) };

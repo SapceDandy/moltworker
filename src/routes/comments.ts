@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
+import { notifyBlockingComment, notifyBlockingResolved } from '../notifications';
 
 const comments = new Hono<AppEnv>();
 
@@ -36,8 +37,8 @@ comments.post('/:taskId', async (c) => {
   try {
     const taskId = c.req.param('taskId');
 
-    // Verify task exists
-    const task = await c.env.DB.prepare('SELECT id FROM tasks WHERE id = ?').bind(taskId).first();
+    // Verify task exists (fetch title for notifications)
+    const task = await c.env.DB.prepare('SELECT id, title FROM tasks WHERE id = ?').bind(taskId).first<{ id: string; title: string }>();
     if (!task) {
       return c.json({ error: { code: 'NOT_FOUND', message: 'Task not found' } }, 404);
     }
@@ -69,6 +70,14 @@ comments.post('/:taskId', async (c) => {
       now,
       null,
     ).run();
+
+    // Notify owner via Discord DM when a blocking comment is added
+    const commentType = (data.comment_type ?? 'comment').toString();
+    if (commentType === 'blocking') {
+      const actor = c.get('accessUser')?.email || 'unknown';
+      const p = notifyBlockingComment(c.env, { title: task.title }, data.content as string, actor);
+      if (c.executionCtx?.waitUntil) c.executionCtx.waitUntil(p); else p.catch(() => {});
+    }
 
     return c.json({ ok: true, id, task_id: taskId }, 201);
   } catch (error) {
@@ -108,8 +117,8 @@ comments.put('/:taskId/:commentId/resolve', async (c) => {
     const commentId = c.req.param('commentId');
 
     const existing = await c.env.DB.prepare(
-      "SELECT id, comment_type, resolved_at FROM task_comments WHERE id = ? AND task_id = ?",
-    ).bind(commentId, taskId).first<{ id: string; comment_type: string; resolved_at: string | null }>();
+      "SELECT id, comment_type, resolved_at, content FROM task_comments WHERE id = ? AND task_id = ?",
+    ).bind(commentId, taskId).first<{ id: string; comment_type: string; resolved_at: string | null; content: string }>();
 
     if (!existing) {
       return c.json({ error: { code: 'NOT_FOUND', message: 'Comment not found' } }, 404);
@@ -127,6 +136,16 @@ comments.put('/:taskId/:commentId/resolve', async (c) => {
     await c.env.DB.prepare(
       'UPDATE task_comments SET resolved_at = ? WHERE id = ?',
     ).bind(now, commentId).run();
+
+    // Notify owner via Discord DM when a blocking comment is resolved (best-effort)
+    try {
+      const actor = c.get('accessUser')?.email || 'unknown';
+      const taskRow = await c.env.DB.prepare('SELECT title FROM tasks WHERE id = ?').bind(taskId).first<{ title: string }>().catch(() => null);
+      const p = notifyBlockingResolved(c.env, { title: taskRow?.title || taskId }, existing.content, actor);
+      if (c.executionCtx?.waitUntil) c.executionCtx.waitUntil(p); else p.catch(() => {});
+    } catch (notifyErr) {
+      console.error('[comments] Notify failed:', notifyErr);
+    }
 
     return c.json({ ok: true, id: commentId, resolved_at: now });
   } catch (error) {
