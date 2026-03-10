@@ -296,12 +296,17 @@ adminApi.post('/gateway/restart', async (c) => {
   const sandbox = c.get('sandbox');
 
   try {
-    // Find and kill the existing gateway process (with timeout)
-    const existingProcess = await withTimeout(
-      findExistingMoltbotProcess(sandbox),
-      ADMIN_EXEC_TIMEOUT_MS,
-      'Process lookup',
-    );
+    // Find and kill the existing gateway process (best-effort, tolerate timeout on cold sandbox)
+    let existingProcess = null;
+    try {
+      existingProcess = await withTimeout(
+        findExistingMoltbotProcess(sandbox),
+        ADMIN_EXEC_TIMEOUT_MS,
+        'Process lookup',
+      );
+    } catch (lookupErr) {
+      console.log('Process lookup failed (cold sandbox?), proceeding with fresh start:', lookupErr);
+    }
 
     if (existingProcess) {
       console.log('Killing existing gateway process:', existingProcess.id);
