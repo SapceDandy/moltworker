@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   listDevices,
   approveDevice,
@@ -55,9 +55,16 @@ export default function AdminPage() {
   const [restartInProgress, setRestartInProgress] = useState(false);
   const [syncInProgress, setSyncInProgress] = useState(false);
 
+  const [loadingElapsed, setLoadingElapsed] = useState(0);
+  const elapsedRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const fetchDevices = useCallback(async () => {
     try {
       setError(null);
+      setLoading(true);
+      setLoadingElapsed(0);
+      elapsedRef.current = setInterval(() => setLoadingElapsed((s) => s + 1), 1000);
+
       const data: DeviceListResponse = await listDevices();
       setPending(data.pending || []);
       setPaired(data.paired || []);
@@ -75,6 +82,7 @@ export default function AdminPage() {
       }
     } finally {
       setLoading(false);
+      if (elapsedRef.current) { clearInterval(elapsedRef.current); elapsedRef.current = null; }
     }
   }, []);
 
@@ -177,9 +185,14 @@ export default function AdminPage() {
       {error && (
         <div className="error-banner">
           <span>{error}</span>
-          <button onClick={() => setError(null)} className="dismiss-btn">
-            Dismiss
-          </button>
+          <div className="error-actions">
+            <button onClick={fetchDevices} className="btn btn-secondary btn-sm">
+              Retry
+            </button>
+            <button onClick={() => setError(null)} className="dismiss-btn">
+              Dismiss
+            </button>
+          </div>
         </div>
       )}
 
@@ -250,7 +263,10 @@ export default function AdminPage() {
       {loading ? (
         <div className="loading">
           <div className="spinner"></div>
-          <p>Loading devices...</p>
+          <p>Loading devices...{loadingElapsed > 5 ? ` (${loadingElapsed}s)` : ''}</p>
+          {loadingElapsed > 10 && (
+            <p className="hint">Gateway may be cold-starting. This can take up to 2 minutes.</p>
+          )}
         </div>
       ) : (
         <>

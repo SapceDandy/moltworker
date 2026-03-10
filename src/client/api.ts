@@ -85,8 +85,19 @@ async function apiRequest<T>(path: string, options: globalThis.RequestInit = {})
   return data;
 }
 
-export async function listDevices(): Promise<DeviceListResponse> {
-  return apiRequest<DeviceListResponse>('/devices');
+export async function listDevices(timeoutMs = 120_000): Promise<DeviceListResponse> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await apiRequest<DeviceListResponse>('/devices', { signal: controller.signal });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('Request timed out — gateway may still be starting. Try again in a moment.');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function approveDevice(requestId: string): Promise<ApproveResponse> {

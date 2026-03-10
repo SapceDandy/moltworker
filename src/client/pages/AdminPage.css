@@ -44,6 +44,13 @@
   color: var(--error-color);
 }
 
+.error-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-shrink: 0;
+}
+
 .dismiss-btn {
   background: none;
   border: none;
