@@ -1,6 +1,6 @@
 ---
 name: google-sheets
-description: Read and write Google Sheets data — get cell values, update ranges, and create new spreadsheets. Use this for all spreadsheet data operations.
+description: Read, write, and create Google Sheets — get/update cell values, create spreadsheets.
 type: http
 request:
   method: GET
@@ -14,67 +14,15 @@ response:
 
 # Google Sheets
 
-Read and write spreadsheet data. Use this skill for all cell-level spreadsheet operations.
-
-All requests require `Authorization: Bearer ${MOLTBOT_GATEWAY_TOKEN}` header.
-
 ## Endpoints
 
-### Read Spreadsheet Data
+### Read: `GET /api/google/sheets/:spreadsheetId?range=Sheet1!A1:Z100&account_id=<optional>`
+With range: returns `values` 2D array. Without range: returns metadata.
 
-`GET /api/google/sheets/:spreadsheetId?range=Sheet1!A1:Z100&account_id=<optional>`
-
-- With `range`: returns cell values as a 2D array (`values: [["A1","B1"],["A2","B2"]]`)
-- Without `range`: returns spreadsheet metadata (title, sheet names)
-
-**Range syntax examples:**
-- `Sheet1!A1:D10` — specific range on Sheet1
-- `Sheet1!A:A` — entire column A
-- `Sheet1!1:1` — entire row 1
-- `Sheet1` — all data on Sheet1
-
-### Write Values
-
-`PUT /api/google/sheets/:spreadsheetId`
-
+### Write: `PUT /api/google/sheets/:spreadsheetId`
 ```json
-{
-  "range": "Sheet1!A1:C3",
-  "values": [
-    ["Name", "Email", "Score"],
-    ["Alice", "alice@example.com", 95],
-    ["Bob", "bob@example.com", 87]
-  ],
-  "account_id": "<optional>"
-}
+{ "range": "Sheet1!A1:C3", "values": [["Name","Email"],["Alice","alice@ex.com"]], "account_id": "<optional>" }
 ```
 
-Values are processed with `USER_ENTERED` input option (formulas and formatting are interpreted).
-
-### Create New Spreadsheet
-
-`POST /api/google/sheets`
-
-```json
-{
-  "title": "Q1 Sales Report",
-  "sheets": ["Revenue", "Expenses", "Summary"],
-  "account_id": "<optional>"
-}
-```
-
-Returns `spreadsheetId` and `spreadsheetUrl`.
-
-## When to Use
-
-- **Reading data**: Pull data from existing spreadsheets for analysis or reporting
-- **Writing data**: Update cells with new values, formulas, or results
-- **Creating spreadsheets**: Create new sheets for tracking, reporting, or data collection
-- **Lead tracking**: Read/write CRM data stored in Google Sheets
-- **Reporting**: Generate periodic reports as spreadsheets
-
-## Important Notes
-
-- Use `google-drive` skill to find spreadsheet IDs by name
-- Values are returned as a 2D array — first row is typically headers
-- Formulas in written values are evaluated (e.g., `=SUM(A1:A10)`)
+### Create: `POST /api/google/sheets` — `{ "title": "Report", "sheets": ["Sheet1","Sheet2"], "account_id": "<optional>" }`
+Use `google-drive` to find spreadsheet IDs by name. Formulas in values are evaluated.

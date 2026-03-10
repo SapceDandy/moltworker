@@ -1,8 +1,6 @@
-import { getSandbox, type SandboxOptions } from '@cloudflare/sandbox';
 import type { MoltbotEnv } from '../types';
-import { ensureMoltbotGateway } from '../gateway';
-import { sendSessionMessage } from '../gateway/rpc';
-import { sendDiscordDM, extractAssistantReply } from './discord';
+import { generateCronBrief } from '../gateway/rpc';
+import { sendDiscordDM } from './discord';
 
 /**
  * Weekly review: summarize all project progress, identify issues, recommend focus.
@@ -10,7 +8,7 @@ import { sendDiscordDM, extractAssistantReply } from './discord';
 export async function weeklyReview(env: MoltbotEnv): Promise<void> {
   console.log('[CRON] Running weekly review');
 
-  // Skip if no active projects — avoids booting sandbox + Claude API call
+  // Skip if no active projects — avoids Claude API call entirely
   const projectCount = await env.DB.prepare(
     "SELECT COUNT(*) as c FROM projects WHERE status = 'active'",
   ).first<{ c: number }>();
@@ -18,12 +16,6 @@ export async function weeklyReview(env: MoltbotEnv): Promise<void> {
     console.log('[CRON] No active projects, skipping weekly review');
     return;
   }
-
-  const sleepAfter = env.SANDBOX_SLEEP_AFTER?.toLowerCase() || 'never';
-  const options: SandboxOptions =
-    sleepAfter === 'never' ? { keepAlive: true } : { sleepAfter };
-  const sandbox = getSandbox(env.Sandbox, 'moltbot', options);
-  await ensureMoltbotGateway(sandbox, env);
 
   const today = new Date().toISOString().split('T')[0];
   let reviewData: Record<string, unknown> = {};
@@ -99,21 +91,20 @@ export async function weeklyReview(env: MoltbotEnv): Promise<void> {
     reviewData = { week_ending: today, error: 'Failed to query weekly data' };
   }
 
-  // Compact JSON to reduce token cost; SOUL.md has full weekly review rules
-  const message = `[SYSTEM] Weekly review for week ending ${today}.\n${JSON.stringify(reviewData)}\nFollow SOUL.md weekly review rules.`;
+  // Generate review via direct Anthropic Haiku call (bypasses OpenClaw system prompt)
+  const message = `Weekly review for week ending ${today}. Summarize per-project progress (% complete, health), identify slipping/stalled projects, flag blockers open 3+ days, recommend focus areas for next week, recommend what to pause/defer/cut.\nData:\n${JSON.stringify(reviewData)}`;
 
-  const result = await sendSessionMessage(sandbox, message, env.MOLTBOT_GATEWAY_TOKEN);
-  console.log('[CRON] Weekly review sent:', result.ok, result.status);
+  const result = await generateCronBrief(message, env);
+  console.log('[CRON] Weekly review generated:', result.ok);
 
   // Forward to Discord DM if configured
   if (env.DISCORD_BOT_TOKEN && env.DISCORD_OWNER_USER_ID) {
     try {
-      const reply = extractAssistantReply(result.body);
-      if (reply) {
-        const sent = await sendDiscordDM(env.DISCORD_BOT_TOKEN, env.DISCORD_OWNER_USER_ID, reply);
+      if (result.ok && result.text) {
+        const sent = await sendDiscordDM(env.DISCORD_BOT_TOKEN, env.DISCORD_OWNER_USER_ID, result.text);
         console.log('[CRON] Weekly review Discord DM:', sent ? 'sent' : 'failed');
       } else {
-        console.warn('[CRON] No assistant reply to forward to Discord');
+        console.warn('[CRON] No review text to forward to Discord');
       }
     } catch (err) {
       console.error('[CRON] Discord DM failed:', err);
@@ -134,7 +125,7 @@ export async function weeklyReview(env: MoltbotEnv): Promise<void> {
     ).bind(
       crypto.randomUUID(),
       'weekly_review_sent',
-      JSON.stringify({ week_ending: today, gateway_response: result.status }),
+      JSON.stringify({ week_ending: today, haiku_ok: result.ok }),
       'cron',
       new Date().toISOString(),
     ).run();

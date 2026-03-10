@@ -1,10 +1,7 @@
-import { getSandbox, type SandboxOptions } from '@cloudflare/sandbox';
 import type { MoltbotEnv } from '../types';
-import { MOLTBOT_PORT } from '../config';
-import { ensureMoltbotGateway } from '../gateway';
-import { sendSessionMessage } from '../gateway/rpc';
+import { generateCronBrief } from '../gateway/rpc';
 import { fetchCalendarEventsForCron } from './google-helpers';
-import { sendDiscordDM, extractAssistantReply } from './discord';
+import { sendDiscordDM } from './discord';
 
 /**
  * Morning brief: query dashboard, take snapshot, and send brief to OpenClaw session.
@@ -12,7 +9,7 @@ import { sendDiscordDM, extractAssistantReply } from './discord';
 export async function morningBrief(env: MoltbotEnv): Promise<void> {
   console.log('[CRON] Running morning brief');
 
-  // Skip if no active projects — avoids booting sandbox + Claude API call
+  // Skip if no active projects — avoids Claude API call entirely
   const projectCount = await env.DB.prepare(
     "SELECT COUNT(*) as c FROM projects WHERE status = 'active'",
   ).first<{ c: number }>();
@@ -20,12 +17,6 @@ export async function morningBrief(env: MoltbotEnv): Promise<void> {
     console.log('[CRON] No active projects, skipping morning brief');
     return;
   }
-
-  const sleepAfter = env.SANDBOX_SLEEP_AFTER?.toLowerCase() || 'never';
-  const options: SandboxOptions =
-    sleepAfter === 'never' ? { keepAlive: true } : { sleepAfter };
-  const sandbox = getSandbox(env.Sandbox, 'moltbot', options);
-  await ensureMoltbotGateway(sandbox, env);
 
   // Fetch dashboard data from the Worker's own D1 database
   const today = new Date().toISOString().split('T')[0];
@@ -125,22 +116,21 @@ export async function morningBrief(env: MoltbotEnv): Promise<void> {
     console.error('[CRON] Snapshot failed:', err);
   }
 
-  // Send to OpenClaw session (compact JSON to reduce token cost; SOUL.md has full brief rules)
+  // Generate brief via direct Anthropic Haiku call (bypasses OpenClaw system prompt)
   const calendarNote = dashboardData.calendar_events ? ' Flag calendar conflicts.' : '';
-  const message = `[SYSTEM] Morning brief for ${today}.\n${JSON.stringify(dashboardData)}\nFollow SOUL.md morning brief rules.${calendarNote}`;
+  const message = `Morning brief for ${today}. Generate top 3-5 priorities, overdue items, open blockers, nearest deadlines, and due reminders.${calendarNote}\nData:\n${JSON.stringify(dashboardData)}`;
 
-  const result = await sendSessionMessage(sandbox, message, env.MOLTBOT_GATEWAY_TOKEN);
-  console.log('[CRON] Morning brief sent:', result.ok, result.status);
+  const result = await generateCronBrief(message, env);
+  console.log('[CRON] Morning brief generated:', result.ok);
 
   // Forward to Discord DM if configured
   if (env.DISCORD_BOT_TOKEN && env.DISCORD_OWNER_USER_ID) {
     try {
-      const reply = extractAssistantReply(result.body);
-      if (reply) {
-        const sent = await sendDiscordDM(env.DISCORD_BOT_TOKEN, env.DISCORD_OWNER_USER_ID, reply);
+      if (result.ok && result.text) {
+        const sent = await sendDiscordDM(env.DISCORD_BOT_TOKEN, env.DISCORD_OWNER_USER_ID, result.text);
         console.log('[CRON] Morning brief Discord DM:', sent ? 'sent' : 'failed');
       } else {
-        console.warn('[CRON] No assistant reply to forward to Discord');
+        console.warn('[CRON] No brief text to forward to Discord');
       }
     } catch (err) {
       console.error('[CRON] Discord DM failed:', err);
@@ -163,7 +153,7 @@ export async function morningBrief(env: MoltbotEnv): Promise<void> {
     ).bind(
       crypto.randomUUID(),
       'morning_brief_sent',
-      JSON.stringify({ date: today, gateway_response: result.status }),
+      JSON.stringify({ date: today, haiku_ok: result.ok }),
       'cron',
       new Date().toISOString(),
     ).run();

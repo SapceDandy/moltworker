@@ -1,6 +1,6 @@
 ---
 name: google-slides
-description: Read Google Slides presentations — get slide content, structure, speaker notes, and layout. Use this to read and analyze existing presentations. For creating or editing presentations, use the google-slides-write skill.
+description: Read, create, and edit Google Slides presentations — get content, create decks, and batch-update with createSlide, insertText, createShape, createImage, deleteObject, replaceAllText.
 type: http
 request:
   method: GET
@@ -12,36 +12,19 @@ response:
   type: json
 ---
 
-# Google Slides (Read)
+# Google Slides
 
-Read Google Slides presentations to inspect slide content, structure, and speaker notes.
-
-All requests require `Authorization: Bearer ${MOLTBOT_GATEWAY_TOKEN}` header.
+Read, create, and edit presentations.
 
 ## Endpoints
 
-### Get Presentation Content
+### Read: `GET /api/google/slides/:presentationId?account_id=<optional>`
 
-`GET /api/google/slides/:presentationId?account_id=<optional>`
+### Create: `POST /api/google/slides` — `{ "title": "My Deck", "account_id": "<optional>" }`
 
-Returns the presentation's title, slides array (with page elements, text, shapes, images), pageSize, and revisionId.
-
-**Response fields:**
-- `presentationId`: Unique ID
-- `title`: Presentation title
-- `slides`: Array of slide objects with `pageElements` (shapes, text boxes, images, tables)
-- `pageSize`: Width and height of slides
-- `revisionId`: Current revision
-
-## When to Use
-
-- **Reading presentations**: Extract content from existing slide decks for analysis
-- **Reviewing slides**: Check slide content, speaker notes, and structure
-- **Content extraction**: Pull text, data, or structure from presentations
-- **Audit**: Review presentations for completeness or accuracy
-
-## Important Notes
-
-- Use `google-drive` skill to find presentation IDs by name
-- Slide content is structured as `pageElements` containing shapes, text boxes, images, and tables
-- Each shape's text is in `shape.text.textElements[].textRun.content`
+### Edit: `PATCH /api/google/slides/:presentationId`
+```json
+{ "requests": [{ "createSlide": { "objectId": "slide_001", "insertionIndex": 1, "slideLayoutReference": { "predefinedLayout": "TITLE_AND_BODY" } } }], "account_id": "<optional>" }
+```
+Request types: `createSlide`, `insertText`, `deleteObject`, `createShape`, `createImage`, `replaceAllText`.
+Layouts: `BLANK`, `TITLE`, `TITLE_AND_BODY`, `TITLE_AND_TWO_COLUMNS`, `SECTION_HEADER`.

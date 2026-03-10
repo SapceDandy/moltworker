@@ -1,9 +1,7 @@
-import { getSandbox, type SandboxOptions } from '@cloudflare/sandbox';
 import type { MoltbotEnv } from '../types';
-import { ensureMoltbotGateway } from '../gateway';
-import { sendSessionMessage } from '../gateway/rpc';
+import { generateCronBrief } from '../gateway/rpc';
 import { fetchCalendarEventsForCron } from './google-helpers';
-import { sendDiscordDM, extractAssistantReply } from './discord';
+import { sendDiscordDM } from './discord';
 
 /**
  * Evening recap: summarize the day's progress and prompt for updates.
@@ -11,7 +9,7 @@ import { sendDiscordDM, extractAssistantReply } from './discord';
 export async function eveningRecap(env: MoltbotEnv): Promise<void> {
   console.log('[CRON] Running evening recap');
 
-  // Skip if no active projects — avoids booting sandbox + Claude API call
+  // Skip if no active projects — avoids Claude API call entirely
   const projectCount = await env.DB.prepare(
     "SELECT COUNT(*) as c FROM projects WHERE status = 'active'",
   ).first<{ c: number }>();
@@ -19,12 +17,6 @@ export async function eveningRecap(env: MoltbotEnv): Promise<void> {
     console.log('[CRON] No active projects, skipping evening recap');
     return;
   }
-
-  const sleepAfter = env.SANDBOX_SLEEP_AFTER?.toLowerCase() || 'never';
-  const options: SandboxOptions =
-    sleepAfter === 'never' ? { keepAlive: true } : { sleepAfter };
-  const sandbox = getSandbox(env.Sandbox, 'moltbot', options);
-  await ensureMoltbotGateway(sandbox, env);
 
   const today = new Date().toISOString().split('T')[0];
   let progressData: Record<string, unknown> = {};
@@ -76,22 +68,21 @@ export async function eveningRecap(env: MoltbotEnv): Promise<void> {
     progressData = { date: today, error: 'Failed to query progress' };
   }
 
-  // Compact JSON to reduce token cost; SOUL.md has full evening recap rules
+  // Generate recap via direct Anthropic Haiku call (bypasses OpenClaw system prompt)
   const calendarNote = progressData.tomorrow_calendar ? ' Flag tomorrow\'s calendar conflicts.' : '';
-  const message = `[SYSTEM] Evening recap for ${today}.\n${JSON.stringify(progressData)}\nFollow SOUL.md evening recap rules.${calendarNote}`;
+  const message = `Evening recap for ${today}. Summarize what got done, what's still open, and what should roll to tomorrow.${calendarNote}\nData:\n${JSON.stringify(progressData)}`;
 
-  const result = await sendSessionMessage(sandbox, message, env.MOLTBOT_GATEWAY_TOKEN);
-  console.log('[CRON] Evening recap sent:', result.ok, result.status);
+  const result = await generateCronBrief(message, env);
+  console.log('[CRON] Evening recap generated:', result.ok);
 
   // Forward to Discord DM if configured
   if (env.DISCORD_BOT_TOKEN && env.DISCORD_OWNER_USER_ID) {
     try {
-      const reply = extractAssistantReply(result.body);
-      if (reply) {
-        const sent = await sendDiscordDM(env.DISCORD_BOT_TOKEN, env.DISCORD_OWNER_USER_ID, reply);
+      if (result.ok && result.text) {
+        const sent = await sendDiscordDM(env.DISCORD_BOT_TOKEN, env.DISCORD_OWNER_USER_ID, result.text);
         console.log('[CRON] Evening recap Discord DM:', sent ? 'sent' : 'failed');
       } else {
-        console.warn('[CRON] No assistant reply to forward to Discord');
+        console.warn('[CRON] No recap text to forward to Discord');
       }
     } catch (err) {
       console.error('[CRON] Discord DM failed:', err);
@@ -104,7 +95,7 @@ export async function eveningRecap(env: MoltbotEnv): Promise<void> {
     ).bind(
       crypto.randomUUID(),
       'evening_recap_sent',
-      JSON.stringify({ date: today, gateway_response: result.status }),
+      JSON.stringify({ date: today, haiku_ok: result.ok }),
       'cron',
       new Date().toISOString(),
     ).run();

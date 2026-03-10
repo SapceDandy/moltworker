@@ -1,6 +1,6 @@
 ---
 name: google-gmail
-description: Search and read Gmail threads (read-only). Use this to find meeting context, action items from emails, or follow up on communications. Supports multiple Google accounts.
+description: Search/read Gmail threads and queue email drafts for owner approval. NEVER send emails directly — always create a draft action via POST /api/actions.
 type: http
 request:
   method: GET
@@ -12,39 +12,21 @@ response:
   type: json
 ---
 
-# Gmail (Read-Only)
+# Gmail
 
-Search and read the user's email to extract context for meetings, find action items, and follow up on communications.
+Search/read threads and draft emails for approval.
 
-## Endpoints
+## Read Endpoints
 
-### Search Threads
+### Search: `GET /api/google/gmail/threads?q=<gmail_query>&account_id=<optional>&max_results=10`
+Examples: `is:unread`, `from:user@example.com newer_than:2d`, `subject:project update`
 
-`GET /api/google/gmail/threads?q=<search_query>&account_id=<optional>&max_results=10`
+### Thread detail: `GET /api/google/gmail/threads/:threadId?account_id=<optional>`
 
-Uses Gmail search syntax (same as the Gmail search bar). Returns thread IDs and snippets.
+## Send Email (Draft Action)
 
-**Example queries:**
-- `is:unread` — unread emails
-- `from:boss@company.com newer_than:2d` — recent emails from someone
-- `subject:project update` — emails about project updates
-- `has:attachment newer_than:7d` — recent emails with attachments
-
-### Get Thread Detail
-
-`GET /api/google/gmail/threads/:threadId?account_id=<optional>`
-
-Returns thread metadata (Subject, From, To, Date) for each message in the thread.
-
-## When to Use
-
-- **Meeting prep**: Search for emails related to an upcoming meeting topic or attendees
-- **Action items**: Find recent threads that may contain tasks or follow-ups
-- **Context gathering**: Look up email history with a specific person or project
-- **Morning brief**: Check for important unread emails to mention in the daily plan
-
-## Important Notes
-
-- This skill is **read-only** — it cannot send, reply to, or modify emails
-- Keep searches targeted to minimize API calls
-- Respect privacy: summarize email content, don't quote full bodies verbatim
+`POST /api/actions` with `action_type: "email_draft"`. Owner must approve before sending.
+```json
+{ "action_type": "email_draft", "title": "Follow up with Acme", "content": "{\"to\":\"john@acme.com\",\"subject\":\"Following up\",\"body\":\"Hi John...\"}" }
+```
+Content JSON fields: `to`, `subject`, `body`, `cc`, `bcc`, `html`. Optional: `task_id`, `lead_id`.
