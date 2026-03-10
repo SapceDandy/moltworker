@@ -1,6 +1,6 @@
 ---
 name: project-manager
-description: Manage projects, tasks, goals, milestones, and blockers via the Worker API. Use this skill for ALL project tracking operations — creating, updating, listing, and querying structured project state.
+description: CRUD for projects, tasks, goals, milestones, blockers, checkins, reminders, comments, and draft actions. ALWAYS use this for status tracking.
 type: http
 request:
   url: "${WORKER_URL}/api/projects"
@@ -13,114 +13,32 @@ response:
 
 # Project Manager
 
-Use this skill for all project and task management. This is your primary tool for structured state — ALWAYS use it instead of relying on memory for status tracking.
+All endpoints: `${WORKER_URL}` base. All require `Authorization: Bearer ${MOLTBOT_GATEWAY_TOKEN}`.
+CRUD pattern: `GET /api/{resource}?filters`, `GET /api/{resource}/{id}`, `POST /api/{resource}`, `PUT /api/{resource}/{id}`, `DELETE /api/{resource}/{id}`
 
-All requests require `Authorization: Bearer ${MOLTBOT_GATEWAY_TOKEN}` header.
+## Projects
+`/api/projects` — fields: name, description, status(active/paused/completed/archived), priority(critical/high/medium/low), health(on_track/at_risk/behind/blocked), percent_complete, start_date, target_date, notes
 
-## Endpoints
+## Tasks
+`/api/tasks?project_id=&status=&overdue=true` — fields: title, description, project_id, milestone_id, status(todo/in_progress/done/blocked/deferred), priority, deadline, blocked_reason, deferred_until. Setting status=done auto-sets completed_date.
 
-All endpoints use `${WORKER_URL}` as the base URL (set in environment).
+## Goals
+`/api/goals?project_id=&status=active` — fields: title, description, project_id, metric, target_value, current_value, status(active/achieved/dropped), target_date
 
-### Projects
+## Milestones
+`/api/milestones?project_id=` — fields: title, description, project_id(required), status(pending/in_progress/completed), percent_complete, target_date
 
-- **List projects**: `GET /api/projects?status=active&priority=high`
-- **Get project**: `GET /api/projects/{id}`
-- **Create project**: `POST /api/projects` with JSON body `{ "name": "...", "description": "...", "priority": "high", "target_date": "2026-06-01" }`
-- **Update project**: `PUT /api/projects/{id}` with JSON body containing fields to update
-- **Delete project**: `DELETE /api/projects/{id}`
+## Blockers
+`/api/blockers?status=open&project_id=` — fields: description, project_id, task_id, status(open/resolved), severity(critical/high/medium/low), resolution
 
-Project fields: `name`, `description`, `status` (active/paused/completed/archived), `priority` (critical/high/medium/low), `health` (on_track/at_risk/behind/blocked), `percent_complete` (0-100), `start_date`, `target_date`, `notes`
+## Check-ins
+`/api/checkins?date=&type=` — POST: `{ "checkin_type": "morning_brief", "summary": "...", "tasks_planned": ["id1"] }`
 
-### Tasks
+## Reminders
+`/api/reminders?status=pending&upcoming=true` — fields: title, description, remind_at(ISO), status(pending/done/snoozed), related_project_id, related_task_id, recurrence(daily/weekly/monthly)
 
-- **List tasks**: `GET /api/tasks?project_id={id}&status=todo&overdue=true`
-- **Get task**: `GET /api/tasks/{id}`
-- **Create task**: `POST /api/tasks` with JSON body `{ "title": "...", "project_id": "...", "priority": "high", "deadline": "2026-04-01" }`
-- **Update task**: `PUT /api/tasks/{id}` with JSON body containing fields to update
-- **Delete task**: `DELETE /api/tasks/{id}`
+## Comments
+`GET/POST /api/comments/{task_id}`, `DELETE /api/comments/{task_id}/{id}` — fields: content, author(user/agent), author_name, comment_type(comment/status_change/progress_report/action_request)
 
-Task fields: `title`, `description`, `project_id`, `milestone_id`, `status` (todo/in_progress/done/blocked/deferred), `priority` (critical/high/medium/low), `deadline`, `blocked_reason`, `deferred_until`, `sort_order`
-
-When marking a task as done, set `status` to `done` — the `completed_date` is auto-set.
-
-### Goals
-
-- **List goals**: `GET /api/goals?project_id={id}&status=active`
-- **Get goal**: `GET /api/goals/{id}`
-- **Create goal**: `POST /api/goals` with JSON body `{ "title": "...", "project_id": "...", "metric": "revenue", "target_value": "10000" }`
-- **Update goal**: `PUT /api/goals/{id}`
-- **Delete goal**: `DELETE /api/goals/{id}`
-
-Goal fields: `title`, `description`, `project_id`, `metric`, `target_value`, `current_value`, `status` (active/achieved/dropped), `target_date`
-
-### Milestones
-
-- **List milestones**: `GET /api/milestones?project_id={id}`
-- **Get milestone**: `GET /api/milestones/{id}`
-- **Create milestone**: `POST /api/milestones` with JSON body `{ "title": "...", "project_id": "...", "target_date": "2026-05-01" }`
-- **Update milestone**: `PUT /api/milestones/{id}`
-- **Delete milestone**: `DELETE /api/milestones/{id}`
-
-Milestone fields: `title`, `description`, `project_id` (required), `status` (pending/in_progress/completed), `percent_complete`, `target_date`, `sort_order`
-
-### Blockers
-
-- **List blockers**: `GET /api/blockers?status=open&project_id={id}`
-- **Create blocker**: `POST /api/blockers` with JSON body `{ "description": "...", "project_id": "...", "task_id": "...", "severity": "high" }`
-- **Update blocker**: `PUT /api/blockers/{id}` — set `status` to `resolved` with a `resolution` to close it
-
-Blocker fields: `description`, `project_id`, `task_id`, `status` (open/resolved), `severity` (critical/high/medium/low), `resolution`
-
-### Check-ins
-
-- **List check-ins**: `GET /api/checkins?date=2026-03-03&type=morning_brief`
-- **Log check-in**: `POST /api/checkins` with JSON body `{ "checkin_type": "morning_brief", "summary": "...", "tasks_planned": ["id1","id2"] }`
-
-Check-in types: `morning_brief`, `evening_recap`, `midday_check`, `weekly_review`
-
-### Reminders
-
-- **List reminders**: `GET /api/reminders?status=pending&project_id={id}&upcoming=true`
-- **Get reminder**: `GET /api/reminders/{id}`
-- **Create reminder**: `POST /api/reminders` with JSON body `{ "title": "...", "remind_at": "2026-03-04T09:00:00Z", "related_project_id": "...", "recurrence": "weekly" }`
-- **Update reminder**: `PUT /api/reminders/{id}`
-- **Delete reminder**: `DELETE /api/reminders/{id}`
-
-Reminder fields: `title`, `description`, `remind_at` (required, ISO datetime), `status` (pending/done/snoozed), `related_project_id`, `related_task_id`, `recurrence` (daily/weekly/monthly or null)
-
-Use `upcoming=true` to get pending reminders due within the next 24 hours.
-
-### Task Comments
-
-- **List comments**: `GET /api/comments/{task_id}` — returns all comments on a task in chronological order
-- **Add comment**: `POST /api/comments/{task_id}` with JSON body `{ "content": "...", "author": "agent", "author_name": "Kudjo", "comment_type": "progress_report" }`
-- **Delete comment**: `DELETE /api/comments/{task_id}/{comment_id}`
-
-Comment fields: `content` (required), `author` (`user`/`agent`), `author_name` (display name), `comment_type` (`comment`/`status_change`/`progress_report`/`action_request`), `metadata` (optional JSON)
-
-Use comments to:
-- Post progress reports on tasks
-- Ask the owner for updates or decisions
-- Log status change reasons
-- Request approval for actions (with `comment_type: "action_request"`)
-
-### Draft Actions
-
-- **List actions**: `GET /api/actions?status=pending&task_id={id}&lead_id={id}&action_type=email_draft`
-- **Get action**: `GET /api/actions/{id}`
-- **Create action**: `POST /api/actions` with JSON body `{ "action_type": "email_draft", "title": "...", "content": "{...}", "task_id": "...", "lead_id": "..." }`
-- **Approve action**: `PUT /api/actions/{id}/approve`
-- **Reject action**: `PUT /api/actions/{id}/reject` with optional `{ "reason": "..." }`
-
-Action types: `email_draft`, `calendar_event`, `task_update`, `message`
-Action statuses: `pending`, `approved`, `rejected`, `sent`, `failed`
-
-**CRITICAL**: Never send emails directly. Always create an `email_draft` action for owner approval. See `google-gmail-send` skill.
-
-## Usage Rules
-
-1. ALWAYS query the database before reporting project status. Never say "I remember..." for status — check the API.
-2. When the owner mentions a new project or task, offer to add it.
-3. When the owner says something is done, update the task status to `done`.
-4. When the owner mentions being stuck, create a blocker.
-5. Confirm before deleting or archiving anything.
+## Actions
+`/api/actions?status=pending&action_type=email_draft` — Create: `{ "action_type": "email_draft", "title": "...", "content": "{...}" }`. Approve: `PUT /api/actions/{id}/approve`. NEVER send emails directly.
