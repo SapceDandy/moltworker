@@ -29,7 +29,7 @@ reminders.get('/', async (c) => {
       params.push(taskId);
     }
     if (upcoming === 'true') {
-      clauses.push("status = 'pending' AND remind_at <= datetime('now', '+24 hours')");
+      clauses.push("status = 'pending' AND remind_at <= datetime('now', '+7 days')");
     }
     if (clauses.length > 0) {
       sql += ' WHERE ' + clauses.join(' AND ');

@@ -65,26 +65,26 @@ export default function DashboardPage() {
           <span className="card-value">{s?.active_projects ?? 0}</span>
           <span className="card-label">Active Projects</span>
         </Link>
-        <div className={`summary-card ${(s?.tasks_in_progress ?? 0) > 0 ? 'highlight-blue' : ''}`}>
+        <Link to="/board" className={`summary-card ${(s?.tasks_in_progress ?? 0) > 0 ? 'highlight-blue' : ''}`}>
           <span className="card-value">{s?.tasks_in_progress ?? 0}</span>
           <span className="card-label">In Progress</span>
-        </div>
-        <div className={`summary-card ${(s?.tasks_due_today ?? 0) > 0 ? 'highlight-yellow' : ''}`}>
+        </Link>
+        <Link to="/board" className={`summary-card ${(s?.tasks_due_today ?? 0) > 0 ? 'highlight-yellow' : ''}`}>
           <span className="card-value">{s?.tasks_due_today ?? 0}</span>
           <span className="card-label">Due Today</span>
-        </div>
-        <div className={`summary-card ${(s?.overdue_tasks ?? 0) > 0 ? 'highlight-red' : ''}`}>
+        </Link>
+        <Link to="/board" className={`summary-card ${(s?.overdue_tasks ?? 0) > 0 ? 'highlight-red' : ''}`}>
           <span className="card-value">{s?.overdue_tasks ?? 0}</span>
           <span className="card-label">Overdue</span>
-        </div>
-        <div className={`summary-card ${(s?.open_blockers ?? 0) > 0 ? 'highlight-red' : ''}`}>
+        </Link>
+        <Link to="/board" className={`summary-card ${(s?.open_blockers ?? 0) > 0 ? 'highlight-red' : ''}`}>
           <span className="card-value">{s?.open_blockers ?? 0}</span>
           <span className="card-label">Blockers</span>
-        </div>
-        <div className={`summary-card ${(s?.stalled_projects ?? 0) > 0 ? 'highlight-yellow' : ''}`}>
+        </Link>
+        <Link to="/projects" className={`summary-card ${(s?.stalled_projects ?? 0) > 0 ? 'highlight-yellow' : ''}`}>
           <span className="card-value">{s?.stalled_projects ?? 0}</span>
           <span className="card-label">Stalled</span>
-        </div>
+        </Link>
       </div>
 
       <div className="dash-grid">
@@ -126,23 +126,23 @@ export default function DashboardPage() {
           ) : (
             <div className="task-list">
               {(dashboard?.overdue_tasks ?? []).map((t) => (
-                <div key={t.id} className="task-row overdue">
+                <Link to={t.project_id ? `/projects/${t.project_id}` : '/board'} key={t.id} className="task-row overdue">
                   <span className="task-title">{t.title}</span>
                   <span className="task-meta">
                     <span className="badge badge-red">overdue</span>
                     {t.project_name && <span className="task-project">{t.project_name}</span>}
                     {t.deadline && <span className="task-deadline">{t.deadline}</span>}
                   </span>
-                </div>
+                </Link>
               ))}
               {(dashboard?.today_tasks ?? []).map((t) => (
-                <div key={t.id} className="task-row today">
+                <Link to={t.project_id ? `/projects/${t.project_id}` : '/board'} key={t.id} className="task-row today">
                   <span className="task-title">{t.title}</span>
                   <span className="task-meta">
                     <span className="badge badge-yellow">today</span>
                     {t.project_name && <span className="task-project">{t.project_name}</span>}
                   </span>
-                </div>
+                </Link>
               ))}
             </div>
           )}
@@ -159,10 +159,10 @@ export default function DashboardPage() {
           ) : (
             <div className="reminder-list">
               {reminders.slice(0, 5).map((r) => (
-                <div key={r.id} className="reminder-row">
+                <Link to="/schedule" key={r.id} className="reminder-row">
                   <span className="reminder-title">{r.title}</span>
                   <span className="reminder-time">{new Date(r.remind_at).toLocaleString()}</span>
-                </div>
+                </Link>
               ))}
             </div>
           )}
@@ -191,12 +191,12 @@ export default function DashboardPage() {
             <h3>Open Blockers</h3>
             <div className="blocker-list">
               {(dashboard?.open_blockers ?? []).map((b) => (
-                <div key={b.id} className="blocker-row">
+                <Link to={b.project_id ? `/projects/${b.project_id}` : '/board'} key={b.id} className="blocker-row">
                   <span className={`badge badge-${b.severity}`}>{b.severity}</span>
                   <span className="blocker-desc">{b.description}</span>
                   {b.project_name && <span className="blocker-project">{b.project_name}</span>}
                   {b.days_open != null && <span className="blocker-age">{b.days_open}d open</span>}
-                </div>
+                </Link>
               ))}
             </div>
           </section>

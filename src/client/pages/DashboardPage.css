@@ -227,6 +227,16 @@
   padding: 0.5rem 0.75rem;
   border-radius: 6px;
   border-left: 3px solid transparent;
+  text-decoration: none;
+  color: inherit;
+  transition: background 0.15s;
+  cursor: pointer;
+}
+
+.task-row:hover {
+  background: var(--surface-hover);
+  text-decoration: none;
+  color: inherit;
 }
 
 .task-row.overdue { border-left-color: var(--error-color); }
@@ -266,6 +276,16 @@
   padding: 0.5rem 0.75rem;
   border-radius: 6px;
   font-size: 0.875rem;
+  text-decoration: none;
+  color: inherit;
+  transition: background 0.15s;
+  cursor: pointer;
+}
+
+.reminder-row:hover {
+  background: var(--surface-hover);
+  text-decoration: none;
+  color: inherit;
 }
 
 .reminder-title { font-weight: 500; }
@@ -314,6 +334,17 @@
   gap: 0.5rem;
   padding: 0.5rem 0.75rem;
   font-size: 0.875rem;
+  text-decoration: none;
+  color: inherit;
+  transition: background 0.15s;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.blocker-row:hover {
+  background: var(--surface-hover);
+  text-decoration: none;
+  color: inherit;
 }
 
 .blocker-desc {
