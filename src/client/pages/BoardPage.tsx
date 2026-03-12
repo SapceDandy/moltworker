@@ -5,6 +5,7 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
+  useDroppable,
   closestCorners,
   type DragStartEvent,
   type DragEndEvent,
@@ -150,6 +151,8 @@ function BoardColumn({
 
   const taskIds = useMemo(() => tasks.map((t) => t.id), [tasks]);
 
+  const { setNodeRef: setDroppableRef } = useDroppable({ id: column.id });
+
   const handleAdd = async () => {
     if (!newTitle.trim()) return;
     setSaving(true);
@@ -179,7 +182,7 @@ function BoardColumn({
       </div>
 
       <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
-        <div className="column-cards" id={`cards-${column.id}`}>
+        <div className="column-cards" id={`cards-${column.id}`} ref={setDroppableRef}>
           {tasks.length === 0 && !adding && (
             <div className="column-empty">No tasks</div>
           )}
