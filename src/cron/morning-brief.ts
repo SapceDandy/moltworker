@@ -123,18 +123,27 @@ export async function morningBrief(env: MoltbotEnv): Promise<void> {
   const result = await generateCronBrief(message, env);
   console.log('[CRON] Morning brief generated:', result.ok);
 
-  // Forward to Discord DM if configured
+  // Forward to Discord DM if configured — always send, even on failure
+  let discordSent = false;
   if (env.DISCORD_BOT_TOKEN && env.DISCORD_OWNER_USER_ID) {
     try {
-      if (result.ok && result.text) {
-        const sent = await sendDiscordDM(env.DISCORD_BOT_TOKEN, env.DISCORD_OWNER_USER_ID, result.text);
-        console.log('[CRON] Morning brief Discord DM:', sent ? 'sent' : 'failed');
-      } else {
-        console.warn('[CRON] No brief text to forward to Discord');
-      }
+      const dmText = result.ok && result.text
+        ? `☀️ **Morning Brief — ${today}**\n\n${result.text}`
+        : `⚠️ **Morning Brief — ${today}**\n\nBrief generation failed: ${result.text || 'unknown error'}\n\nCheck the dashboard for task details.`;
+      discordSent = await sendDiscordDM(env.DISCORD_BOT_TOKEN, env.DISCORD_OWNER_USER_ID, dmText);
+      console.log('[CRON] Morning brief Discord DM:', discordSent ? 'sent' : 'failed');
     } catch (err) {
       console.error('[CRON] Discord DM failed:', err);
     }
+  } else {
+    console.warn('[CRON] Discord DM skipped: DISCORD_BOT_TOKEN or DISCORD_OWNER_USER_ID not set');
+  }
+
+  // Auto-create reminders for upcoming deadlines (best-effort, zero LLM cost)
+  try {
+    await autoCreateReminders(env, today);
+  } catch (err) {
+    console.error('[CRON] Auto-reminder creation failed:', err);
   }
 
   // Log the check-in (store actual brief text for dashboard visibility)
@@ -154,11 +163,117 @@ export async function morningBrief(env: MoltbotEnv): Promise<void> {
     ).bind(
       crypto.randomUUID(),
       'morning_brief_sent',
-      JSON.stringify({ date: today, haiku_ok: result.ok, error: result.ok ? undefined : result.text }),
+      JSON.stringify({ date: today, haiku_ok: result.ok, discord_sent: discordSent, error: result.ok ? undefined : result.text }),
       'cron',
       new Date().toISOString(),
     ).run();
   } catch (err) {
     console.error('[CRON] Agent log failed:', err);
+  }
+}
+
+/**
+ * Auto-create reminders for tasks with upcoming deadlines and project target dates.
+ * Only creates reminders that don't already exist (deduplicates by related_task_id or related_project_id).
+ */
+async function autoCreateReminders(env: MoltbotEnv, today: string): Promise<void> {
+  const now = new Date().toISOString();
+  const threeDaysOut = new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0];
+  const sevenDaysOut = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
+  let created = 0;
+
+  // 1. Tasks with deadlines in the next 3 days that don't have a pending reminder
+  const { results: upcomingTasks } = await env.DB.prepare(
+    `SELECT t.id, t.title, t.deadline, t.priority, p.name as project_name
+     FROM tasks t LEFT JOIN projects p ON t.project_id = p.id
+     WHERE t.deadline >= ? AND t.deadline <= ?
+       AND t.status NOT IN ('done', 'deferred')
+       AND t.id NOT IN (
+         SELECT related_task_id FROM reminders
+         WHERE related_task_id IS NOT NULL AND status = 'pending'
+       )
+     ORDER BY t.deadline ASC`,
+  ).bind(today, threeDaysOut).all<{ id: string; title: string; deadline: string; priority: string; project_name: string | null }>();
+
+  for (const task of upcomingTasks) {
+    const daysUntil = Math.ceil((new Date(task.deadline).getTime() - Date.now()) / 86400000);
+    const label = daysUntil <= 0 ? 'today' : daysUntil === 1 ? 'tomorrow' : `in ${daysUntil} days`;
+    const project = task.project_name ? ` (${task.project_name})` : '';
+    // Set reminder for 8 AM on the deadline day (or today if deadline is today/past)
+    const remindDate = daysUntil <= 0 ? today : task.deadline;
+    await env.DB.prepare(
+      `INSERT INTO reminders (id, title, description, remind_at, status, related_task_id, recurrence, created_at)
+       VALUES (?, ?, ?, ?, 'pending', ?, NULL, ?)`,
+    ).bind(
+      crypto.randomUUID(),
+      `📋 ${task.title} — due ${label}`,
+      `Task deadline ${label}${project}. Priority: ${task.priority}.`,
+      `${remindDate}T13:00:00Z`,
+      task.id,
+      now,
+    ).run();
+    created++;
+  }
+
+  // 2. Projects with target dates in the next 7 days that don't have a pending reminder
+  const { results: upcomingProjects } = await env.DB.prepare(
+    `SELECT p.id, p.name, p.target_date, p.priority, p.percent_complete
+     FROM projects p
+     WHERE p.status = 'active' AND p.target_date IS NOT NULL
+       AND p.target_date >= ? AND p.target_date <= ?
+       AND p.id NOT IN (
+         SELECT related_project_id FROM reminders
+         WHERE related_project_id IS NOT NULL AND status = 'pending'
+       )
+     ORDER BY p.target_date ASC`,
+  ).bind(today, sevenDaysOut).all<{ id: string; name: string; target_date: string; priority: string; percent_complete: number }>();
+
+  for (const project of upcomingProjects) {
+    const daysUntil = Math.ceil((new Date(project.target_date).getTime() - Date.now()) / 86400000);
+    const label = daysUntil <= 0 ? 'today' : daysUntil === 1 ? 'tomorrow' : `in ${daysUntil} days`;
+    await env.DB.prepare(
+      `INSERT INTO reminders (id, title, description, remind_at, status, related_project_id, recurrence, created_at)
+       VALUES (?, ?, ?, ?, 'pending', ?, NULL, ?)`,
+    ).bind(
+      crypto.randomUUID(),
+      `🎯 ${project.name} target date — ${label}`,
+      `Project target date ${label}. Currently ${project.percent_complete}% complete. Priority: ${project.priority}.`,
+      `${project.target_date}T13:00:00Z`,
+      project.id,
+      now,
+    ).run();
+    created++;
+  }
+
+  // 3. Overdue tasks without a reminder — create a follow-up
+  const { results: overdueTasks } = await env.DB.prepare(
+    `SELECT t.id, t.title, t.deadline, p.name as project_name
+     FROM tasks t LEFT JOIN projects p ON t.project_id = p.id
+     WHERE t.deadline < ? AND t.status NOT IN ('done', 'deferred')
+       AND t.id NOT IN (
+         SELECT related_task_id FROM reminders
+         WHERE related_task_id IS NOT NULL AND status = 'pending'
+       )
+     ORDER BY t.deadline ASC LIMIT 10`,
+  ).bind(today).all<{ id: string; title: string; deadline: string; project_name: string | null }>();
+
+  for (const task of overdueTasks) {
+    const project = task.project_name ? ` (${task.project_name})` : '';
+    await env.DB.prepare(
+      `INSERT INTO reminders (id, title, description, remind_at, status, related_task_id, recurrence, created_at)
+       VALUES (?, ?, ?, ?, 'pending', ?, NULL, ?)`,
+    ).bind(
+      crypto.randomUUID(),
+      `🚨 Overdue: ${task.title}`,
+      `Task was due ${task.deadline}${project}. Needs attention or rescheduling.`,
+      `${today}T13:00:00Z`,
+      task.id,
+      now,
+    ).run();
+    created++;
+  }
+
+  if (created > 0) {
+    console.log(`[CRON] Auto-created ${created} reminders`);
   }
 }

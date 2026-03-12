@@ -97,18 +97,20 @@ export async function weeklyReview(env: MoltbotEnv): Promise<void> {
   const result = await generateCronBrief(message, env);
   console.log('[CRON] Weekly review generated:', result.ok);
 
-  // Forward to Discord DM if configured
+  // Forward to Discord DM if configured — always send, even on failure
+  let discordSent = false;
   if (env.DISCORD_BOT_TOKEN && env.DISCORD_OWNER_USER_ID) {
     try {
-      if (result.ok && result.text) {
-        const sent = await sendDiscordDM(env.DISCORD_BOT_TOKEN, env.DISCORD_OWNER_USER_ID, result.text);
-        console.log('[CRON] Weekly review Discord DM:', sent ? 'sent' : 'failed');
-      } else {
-        console.warn('[CRON] No review text to forward to Discord');
-      }
+      const dmText = result.ok && result.text
+        ? `📊 **Weekly Review — week ending ${today}**\n\n${result.text}`
+        : `⚠️ **Weekly Review — ${today}**\n\nReview generation failed: ${result.text || 'unknown error'}\n\nCheck the dashboard for details.`;
+      discordSent = await sendDiscordDM(env.DISCORD_BOT_TOKEN, env.DISCORD_OWNER_USER_ID, dmText);
+      console.log('[CRON] Weekly review Discord DM:', discordSent ? 'sent' : 'failed');
     } catch (err) {
       console.error('[CRON] Discord DM failed:', err);
     }
+  } else {
+    console.warn('[CRON] Discord DM skipped: DISCORD_BOT_TOKEN or DISCORD_OWNER_USER_ID not set');
   }
 
   try {
@@ -125,7 +127,7 @@ export async function weeklyReview(env: MoltbotEnv): Promise<void> {
     ).bind(
       crypto.randomUUID(),
       'weekly_review_sent',
-      JSON.stringify({ week_ending: today, haiku_ok: result.ok }),
+      JSON.stringify({ week_ending: today, haiku_ok: result.ok, discord_sent: discordSent, error: result.ok ? undefined : result.text }),
       'cron',
       new Date().toISOString(),
     ).run();
