@@ -2,7 +2,7 @@ import type { Sandbox } from '@cloudflare/sandbox';
 import { MOLTBOT_PORT } from '../config';
 import type { MoltbotEnv } from '../types';
 
-const HAIKU_MODEL = 'claude-3-5-haiku-20241022';
+const HAIKU_MODEL = 'claude-haiku-4-5-20251001';
 const OPENAI_MINI_MODEL = 'gpt-4o-mini';
 const CRON_SYSTEM_PROMPT =
   'You are Kudjo, a concise executive assistant. Respond with bullet points. Keep under 15 lines. Be direct, no fluff.';
