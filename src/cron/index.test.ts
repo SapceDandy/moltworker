@@ -6,12 +6,14 @@ vi.mock('./keep-warm', () => ({ keepWarm: vi.fn().mockResolvedValue(undefined) }
 vi.mock('./morning-brief', () => ({ morningBrief: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('./evening-recap', () => ({ eveningRecap: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('./weekly-review', () => ({ weeklyReview: vi.fn().mockResolvedValue(undefined) }));
+vi.mock('./check-replies', () => ({ checkReplies: vi.fn().mockResolvedValue(undefined) }));
 
 import { handleScheduled } from './index';
 import { keepWarm } from './keep-warm';
 import { morningBrief } from './morning-brief';
 import { eveningRecap } from './evening-recap';
 import { weeklyReview } from './weekly-review';
+import { checkReplies } from './check-replies';
 import type { MoltbotEnv } from '../types';
 
 function makeEvent(cron: string): ScheduledEvent {
@@ -53,11 +55,18 @@ describe('handleScheduled', () => {
     expect(weeklyReview).toHaveBeenCalledWith(mockEnv);
   });
 
+  it('dispatches check-replies cron', async () => {
+    await handleScheduled(makeEvent('*/15 * * * *'), mockEnv);
+    expect(checkReplies).toHaveBeenCalledWith(mockEnv);
+    expect(keepWarm).not.toHaveBeenCalled();
+  });
+
   it('handles unknown cron expression gracefully', async () => {
     await handleScheduled(makeEvent('0 0 * * *'), mockEnv);
     expect(keepWarm).not.toHaveBeenCalled();
     expect(morningBrief).not.toHaveBeenCalled();
     expect(eveningRecap).not.toHaveBeenCalled();
     expect(weeklyReview).not.toHaveBeenCalled();
+    expect(checkReplies).not.toHaveBeenCalled();
   });
 });

@@ -3,6 +3,7 @@ import { morningBrief } from './morning-brief';
 import { eveningRecap } from './evening-recap';
 import { weeklyReview } from './weekly-review';
 import { keepWarm } from './keep-warm';
+import { checkReplies } from './check-replies';
 
 /**
  * Dispatch scheduled events to the appropriate handler based on cron expression.
@@ -17,6 +18,8 @@ export async function handleScheduled(
     switch (event.cron) {
       case '*/5 * * * *':
         return keepWarm(env);
+      case '*/15 * * * *':
+        return checkReplies(env);
       case '0 13 * * 1-5':
         return morningBrief(env);
       case '0 23 * * 1-5':

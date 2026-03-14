@@ -103,6 +103,45 @@ async function _morningBriefInner(env: MoltbotEnv, today: string): Promise<void>
       console.error('[CRON] Calendar events fetch failed:', err);
     }
 
+    // Fetch sales cadence data
+    let dueTouches: Record<string, unknown>[] = [];
+    let cadenceSummary: Record<string, unknown> | null = null;
+    let stalledCadences: Record<string, unknown>[] = [];
+    try {
+      const [touchesRes, summaryRes, stalledRes] = await Promise.all([
+        env.DB.prepare(
+          `SELECT tl.id, tl.touch_type, tl.scheduled_at, ps.name as stage_name, ps.stage_type, ps.framework,
+           l.business_name, l.domain
+           FROM touch_log tl
+           JOIN sales_cadences sc ON tl.cadence_id = sc.id
+           LEFT JOIN leads l ON sc.lead_id = l.id
+           LEFT JOIN pipeline_stages ps ON tl.stage_id = ps.id
+           WHERE tl.status = 'scheduled' AND tl.scheduled_at <= ? AND sc.status = 'active'
+           ORDER BY tl.scheduled_at ASC LIMIT 20`,
+        ).bind(today).all(),
+        env.DB.prepare(
+          `SELECT
+            SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active,
+            SUM(CASE WHEN status = 'won' THEN 1 ELSE 0 END) as won,
+            SUM(CASE WHEN status = 'lost' THEN 1 ELSE 0 END) as lost
+           FROM sales_cadences`,
+        ).first(),
+        env.DB.prepare(
+          `SELECT sc.id, l.business_name, l.domain, ps.name as stage_name, sc.last_touch_at
+           FROM sales_cadences sc
+           LEFT JOIN leads l ON sc.lead_id = l.id
+           LEFT JOIN pipeline_stages ps ON sc.current_stage_id = ps.id
+           WHERE sc.status = 'active' AND (sc.last_touch_at IS NULL OR sc.last_touch_at < datetime('now', '-5 days'))
+           LIMIT 10`,
+        ).all(),
+      ]);
+      dueTouches = touchesRes.results as Record<string, unknown>[];
+      cadenceSummary = summaryRes;
+      stalledCadences = stalledRes.results as Record<string, unknown>[];
+    } catch (err) {
+      console.error('[CRON] Cadence query failed:', err);
+    }
+
     // Build payload, omitting empty arrays to reduce token count
     dashboardData = { date: today } as Record<string, unknown>;
     if (activeProjects.results.length) dashboardData.active_projects = activeProjects.results;
@@ -111,6 +150,9 @@ async function _morningBriefInner(env: MoltbotEnv, today: string): Promise<void>
     if (openBlockers.results.length) dashboardData.open_blockers = openBlockers.results;
     if (dueReminders.results.length) dashboardData.due_reminders = dueReminders.results;
     if (calendarEvents.length) dashboardData.calendar_events = calendarEvents;
+    if (dueTouches.length) dashboardData.sales_due_touches = dueTouches;
+    if (cadenceSummary) dashboardData.sales_summary = cadenceSummary;
+    if (stalledCadences.length) dashboardData.sales_stalled = stalledCadences;
   } catch (err) {
     console.error('[CRON] Dashboard query failed:', err);
     dashboardData = { date: today, error: 'Failed to query dashboard' };
@@ -146,7 +188,8 @@ async function _morningBriefInner(env: MoltbotEnv, today: string): Promise<void>
 
   // Generate brief via direct Anthropic Haiku call (bypasses OpenClaw system prompt)
   const calendarNote = dashboardData.calendar_events ? ' Flag calendar conflicts.' : '';
-  const message = `Morning brief for ${today}. Generate top 3-5 priorities, overdue items, open blockers, nearest deadlines, and due reminders.${calendarNote}\nData:\n${JSON.stringify(dashboardData)}`;
+  const salesNote = dashboardData.sales_due_touches ? ' Include sales outreach due today (calls, emails, LinkedIn touches). Flag stalled cadences.' : '';
+  const message = `Morning brief for ${today}. Generate top 3-5 priorities, overdue items, open blockers, nearest deadlines, and due reminders.${calendarNote}${salesNote}\nData:\n${JSON.stringify(dashboardData)}`;
 
   const result = await generateCronBrief(message, env);
   console.log('[CRON] Morning brief generated:', result.ok);

@@ -10,7 +10,7 @@ const CRON_SYSTEM_PROMPT =
 
 /** Call Anthropic Messages API */
 async function callAnthropic(
-  url: string, apiKey: string, model: string, message: string,
+  url: string, apiKey: string, model: string, message: string, systemPrompt?: string,
 ): Promise<{ ok: boolean; text: string }> {
   console.log(`[rpc] Calling Anthropic at ${url} model=${model}`);
   const resp = await fetch(url, {
@@ -21,7 +21,7 @@ async function callAnthropic(
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model, max_tokens: 1024, system: CRON_SYSTEM_PROMPT,
+      model, max_tokens: 2048, system: systemPrompt || CRON_SYSTEM_PROMPT,
       messages: [{ role: 'user', content: message }],
     }),
   });
@@ -36,7 +36,7 @@ async function callAnthropic(
 
 /** Call OpenAI-compatible Chat Completions API (works with OpenAI, Workers AI, etc.) */
 async function callOpenAI(
-  url: string, apiKey: string, model: string, message: string,
+  url: string, apiKey: string, model: string, message: string, systemPrompt?: string,
 ): Promise<{ ok: boolean; text: string }> {
   console.log(`[rpc] Calling OpenAI-compat at ${url} model=${model}`);
   const resp = await fetch(url, {
@@ -46,9 +46,9 @@ async function callOpenAI(
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model, max_tokens: 1024,
+      model, max_tokens: 2048,
       messages: [
-        { role: 'system', content: CRON_SYSTEM_PROMPT },
+        { role: 'system', content: systemPrompt || CRON_SYSTEM_PROMPT },
         { role: 'user', content: message },
       ],
     }),
@@ -121,6 +121,52 @@ export async function generateCronBrief(
     return { ok: false, text: 'No API key configured for cron briefs' };
   } catch (err) {
     console.error('[rpc] generateCronBrief failed:', err);
+    return { ok: false, text: String(err) };
+  }
+}
+
+/**
+ * Generate an AI brief with a custom system prompt.
+ * Uses the same provider selection as generateCronBrief.
+ */
+export async function generateAiBrief(
+  message: string,
+  env: MoltbotEnv,
+  systemPrompt: string,
+): Promise<{ ok: boolean; text: string }> {
+  console.log(`[rpc] generateAiBrief code_version=${CRON_CODE_VERSION}`);
+  try {
+    if (env.CF_AI_GATEWAY_MODEL && env.CLOUDFLARE_AI_GATEWAY_API_KEY &&
+        env.CF_AI_GATEWAY_ACCOUNT_ID && env.CF_AI_GATEWAY_GATEWAY_ID) {
+      const raw = env.CF_AI_GATEWAY_MODEL;
+      const slashIdx = raw.indexOf('/');
+      const gwProvider = slashIdx > 0 ? raw.substring(0, slashIdx) : 'anthropic';
+      const modelId = slashIdx > 0 ? raw.substring(slashIdx + 1) : raw;
+      let gwBase = `https://gateway.ai.cloudflare.com/v1/${env.CF_AI_GATEWAY_ACCOUNT_ID}/${env.CF_AI_GATEWAY_GATEWAY_ID}/${gwProvider}`;
+      if (gwProvider === 'workers-ai') gwBase += '/v1';
+      if (gwProvider === 'anthropic') {
+        return await callAnthropic(`${gwBase}/v1/messages`, env.CLOUDFLARE_AI_GATEWAY_API_KEY, modelId, message, systemPrompt);
+      }
+      return await callOpenAI(`${gwBase}/chat/completions`, env.CLOUDFLARE_AI_GATEWAY_API_KEY, modelId, message, systemPrompt);
+    }
+    if (env.AI_GATEWAY_API_KEY && env.AI_GATEWAY_BASE_URL) {
+      const baseUrl = env.AI_GATEWAY_BASE_URL.replace(/\/+$/, '');
+      return await callAnthropic(`${baseUrl}/v1/messages`, env.AI_GATEWAY_API_KEY, HAIKU_MODEL, message, systemPrompt);
+    }
+    if (env.ANTHROPIC_API_KEY) {
+      const baseUrl = env.ANTHROPIC_BASE_URL?.replace(/\/+$/, '') || 'https://api.anthropic.com';
+      return await callAnthropic(`${baseUrl}/v1/messages`, env.ANTHROPIC_API_KEY, HAIKU_MODEL, message, systemPrompt);
+    }
+    if (env.CLOUDFLARE_AI_GATEWAY_API_KEY && env.CF_AI_GATEWAY_ACCOUNT_ID && env.CF_AI_GATEWAY_GATEWAY_ID) {
+      const baseUrl = `https://gateway.ai.cloudflare.com/v1/${env.CF_AI_GATEWAY_ACCOUNT_ID}/${env.CF_AI_GATEWAY_GATEWAY_ID}/anthropic`;
+      return await callAnthropic(`${baseUrl}/v1/messages`, env.CLOUDFLARE_AI_GATEWAY_API_KEY, HAIKU_MODEL, message, systemPrompt);
+    }
+    if (env.OPENAI_API_KEY) {
+      return await callOpenAI('https://api.openai.com/v1/chat/completions', env.OPENAI_API_KEY, OPENAI_MINI_MODEL, message, systemPrompt);
+    }
+    return { ok: false, text: 'No API key configured' };
+  } catch (err) {
+    console.error('[rpc] generateAiBrief failed:', err);
     return { ok: false, text: String(err) };
   }
 }

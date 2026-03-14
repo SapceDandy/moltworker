@@ -142,6 +142,33 @@ export function createMockD1(): MockD1 {
             continue;
           }
 
+          // col > ? (bind param comparison)
+          const gtBindMatch = trimPart.match(/^(\w+(?:\.\w+)?)\s*>\s*\?$/);
+          if (gtBindMatch) {
+            const col = gtBindMatch[1].split('.').pop()!;
+            const val = params[paramIdx++];
+            rows = rows.filter((r) => r[col] != null && Number(r[col]) > Number(val));
+            continue;
+          }
+
+          // col >= ? (bind param comparison)
+          const gteBindMatch = trimPart.match(/^(\w+(?:\.\w+)?)\s*>=\s*\?$/);
+          if (gteBindMatch) {
+            const col = gteBindMatch[1].split('.').pop()!;
+            const val = params[paramIdx++];
+            rows = rows.filter((r) => r[col] != null && String(r[col]) >= String(val));
+            continue;
+          }
+
+          // col <= ? (bind param comparison)
+          const lteBindMatch = trimPart.match(/^(\w+(?:\.\w+)?)\s*<=\s*\?$/);
+          if (lteBindMatch) {
+            const col = lteBindMatch[1].split('.').pop()!;
+            const val = params[paramIdx++];
+            rows = rows.filter((r) => r[col] != null && String(r[col]) <= String(val));
+            continue;
+          }
+
           // col < ? (bind param comparison)
           const ltBindMatch = trimPart.match(/^(\w+(?:\.\w+)?)\s*<\s*\?$/);
           if (ltBindMatch) {

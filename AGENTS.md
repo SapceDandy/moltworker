@@ -10,6 +10,7 @@ This is a Cloudflare Worker that runs [OpenClaw](https://github.com/openclaw/ope
 - API endpoints at `/api/*` for device pairing
 - Debug endpoints at `/debug/*` for troubleshooting
 - **Executive assistant** ("Kudjo"): D1-backed project/task/goal management with cron-driven daily briefs, evening recaps, and weekly reviews
+- **Sales cadence system**: 14-stage cold outbound pipeline with AI call prep briefs, email tracking (open pixel + Gmail thread reply detection), multi-view client UI (queue, pipeline funnel, lead detail, weekly calendar)
 
 **Note:** The CLI tool and npm package are now named `openclaw`. Config files use `.openclaw/openclaw.json`. Legacy `.clawdbot` paths are supported for backward compatibility during transition.
 
@@ -38,14 +39,16 @@ src/
 │   ├── checkins.ts   # /api/checkins + /api/blockers CRUD
 │   ├── reminders.ts  # /api/reminders CRUD
 │   ├── dashboard.ts  # /api/dashboard aggregate + snapshot
+│   ├── cadence.ts    # /api/cadence/* sales pipeline, stages, cadences, touches, AI call prep, tracking pixel
 │   ├── agent-logs.ts # /api/agent-logs read-only query
 │   ├── admin.ts      # /_admin/* static file serving
 │   └── debug.ts      # /debug/* endpoints
 ├── cron/             # Scheduled event handlers
 │   ├── index.ts      # Cron dispatch by expression
-│   ├── morning-brief.ts  # 7am CT weekdays
+│   ├── morning-brief.ts  # 7am CT weekdays (includes sales cadence data)
 │   ├── evening-recap.ts  # 5pm CT weekdays
 │   ├── weekly-review.ts  # 5pm CT Sunday
+│   ├── check-replies.ts  # Every 15 min Gmail thread reply check
 │   └── keep-warm.ts      # Every 5 min sandbox ping
 └── client/           # React admin UI (Vite)
     ├── App.tsx
@@ -53,6 +56,7 @@ src/
     └── pages/
 skills/               # OpenClaw skill definitions (copied into container)
 ├── project-manager/  # CRUD for projects, tasks, goals, milestones, blockers, reminders
+├── sales-cadence/    # Sales pipeline, cadences, touches, AI call prep briefs
 ├── daily-brief/      # Fetch aggregated dashboard data
 ├── save-lead/        # Upsert lead to D1
 └── fetch-page/       # Fetch any URL
@@ -61,7 +65,8 @@ workspace/            # OpenClaw bootstrap files (copied into container)
 └── USER.md           # Owner profile and preferences
 migrations/           # D1 schema migrations
 ├── 0001_leads.sql
-└── 0002_executive_assistant.sql
+├── 0002_executive_assistant.sql
+└── 0005_sales_cadence.sql   # sales_pipelines, pipeline_stages, sales_cadences, touch_log, campaign_metrics
 ```
 
 ## Key Patterns

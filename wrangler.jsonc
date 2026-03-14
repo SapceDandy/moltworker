@@ -78,10 +78,11 @@
 			"bucket_name": "moltbot-data",
 		},
 	],
-	// Cron triggers: executive assistant routines + keep-warm
+	// Cron triggers: executive assistant routines + keep-warm + reply check
 	"triggers": {
 		"crons": [
 			"*/5 * * * *",
+			"*/15 * * * *",
 			"0 13 * * 1-5",
 			"0 23 * * 1-5",
 			"0 23 * * 7"

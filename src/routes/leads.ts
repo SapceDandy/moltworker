@@ -204,7 +204,71 @@ leads.post('/', async (c) => {
     }
 
     const row = buildLeadRow(data, domain);
+
+    // Check if this is a new lead (not an update) for auto-enroll
+    const existingLead = await c.env.DB.prepare('SELECT id FROM leads WHERE domain = ?').bind(domain).first();
+
     await upsertLead(c.env.DB, row);
+
+    // Auto-enroll new leads into default sales cadence
+    if (!existingLead && data.skip_cadence !== true) {
+      try {
+        const defaultPipeline = await c.env.DB.prepare(
+          'SELECT id FROM sales_pipelines WHERE is_default = 1 LIMIT 1',
+        ).first();
+        if (defaultPipeline) {
+          // Get the lead ID (may differ from row.id if upsert matched)
+          const lead = await c.env.DB.prepare('SELECT id FROM leads WHERE domain = ?').bind(domain).first();
+          if (lead) {
+            const firstStage = await c.env.DB.prepare(
+              'SELECT id, delay_days FROM pipeline_stages WHERE pipeline_id = ? ORDER BY stage_number ASC LIMIT 1',
+            ).bind(defaultPipeline.id as string).first();
+
+            const now = new Date().toISOString();
+            const cadenceId = crypto.randomUUID();
+            const nextTouchDue = firstStage
+              ? new Date(Date.now() + (Number(firstStage.delay_days) || 0) * 86400000).toISOString().split('T')[0]
+              : null;
+
+            await c.env.DB.prepare(
+              `INSERT INTO sales_cadences (id, lead_id, pipeline_id, current_stage_id, status, priority, health,
+               next_touch_due, lead_score, started_at, created_at, updated_at)
+               VALUES (?, ?, ?, ?, 'active', 'medium', 'on_track', ?, ?, ?, ?, ?)`,
+            ).bind(
+              cadenceId, lead.id as string, defaultPipeline.id as string,
+              firstStage ? (firstStage.id as string) : null,
+              nextTouchDue,
+              row.match_score,
+              now, now, now,
+            ).run();
+
+            // Auto-schedule touches for all stages
+            if (firstStage) {
+              const { results: allStages } = await c.env.DB.prepare(
+                'SELECT * FROM pipeline_stages WHERE pipeline_id = ? ORDER BY stage_number ASC',
+              ).bind(defaultPipeline.id as string).all();
+              let cumulativeDelay = 0;
+              for (const stage of allStages) {
+                cumulativeDelay += Number(stage.delay_days) || 0;
+                const scheduledAt = new Date(Date.now() + cumulativeDelay * 86400000).toISOString().split('T')[0];
+                await c.env.DB.prepare(
+                  `INSERT INTO touch_log (id, cadence_id, stage_id, touch_type, owner, status, scheduled_at, created_at)
+                   VALUES (?, ?, ?, ?, ?, 'scheduled', ?, ?)`,
+                ).bind(
+                  crypto.randomUUID(), cadenceId, stage.id as string,
+                  stage.stage_type as string, stage.default_owner as string,
+                  scheduledAt, now,
+                ).run();
+              }
+            }
+          }
+        }
+      } catch (enrollErr) {
+        console.error('[leads] Auto-enroll cadence failed:', enrollErr);
+        // Don't fail the lead creation if cadence enrollment fails
+      }
+    }
+
     return c.json({ ok: true, domain: row.domain });
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Unknown error';

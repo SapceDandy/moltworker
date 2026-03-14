@@ -8,6 +8,7 @@ import SettingsPage from './pages/SettingsPage';
 import BoardPage from './pages/BoardPage';
 import LeadsPage from './pages/LeadsPage';
 import ActionsPage from './pages/ActionsPage';
+import CadencePage from './pages/CadencePage';
 import './App.css';
 
 export default function App() {
@@ -23,6 +24,7 @@ export default function App() {
             <NavLink to="/projects" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>Projects</NavLink>
             <NavLink to="/leads" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>Leads</NavLink>
             <NavLink to="/actions" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>Actions</NavLink>
+            <NavLink to="/cadence" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>Cadence</NavLink>
             <NavLink to="/goals" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>Goals</NavLink>
             <NavLink to="/schedule" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>Schedule</NavLink>
             <NavLink to="/settings" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>Settings</NavLink>
@@ -38,6 +40,7 @@ export default function App() {
             <Route path="/projects/:id" element={<ProjectsPage />} />
             <Route path="/leads" element={<LeadsPage />} />
             <Route path="/actions" element={<ActionsPage />} />
+            <Route path="/cadence" element={<CadencePage />} />
             <Route path="/goals" element={<GoalsPage />} />
             <Route path="/schedule" element={<SchedulePage />} />
             <Route path="/settings" element={<SettingsPage />} />

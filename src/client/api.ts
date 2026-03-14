@@ -637,3 +637,190 @@ export async function rejectAction(id: string, reason?: string): Promise<{ ok: b
 export async function sendAction(id: string): Promise<{ ok: boolean; id: string; status: string }> {
   return execApi(`/actions/${id}/send`, { method: 'PUT' });
 }
+
+// --- Sales Cadence ---
+
+export interface SalesPipeline {
+  id: string;
+  name: string;
+  description: string | null;
+  is_default: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PipelineStage {
+  id: string;
+  pipeline_id: string;
+  stage_number: number;
+  name: string;
+  stage_type: string;
+  default_owner: string;
+  delay_days: number;
+  framework: string | null;
+  guidance: string | null;
+  benchmarks: string | null;
+  created_at: string;
+}
+
+export interface SalesCadence {
+  id: string;
+  lead_id: string;
+  pipeline_id: string;
+  current_stage_id: string | null;
+  status: string;
+  priority: string;
+  health: string;
+  next_touch_due: string | null;
+  loss_reason: string | null;
+  owner_notes: string | null;
+  lead_score: number | null;
+  started_at: string | null;
+  last_touch_at: string | null;
+  created_at: string;
+  updated_at: string;
+  // Joined fields
+  business_name?: string;
+  domain?: string;
+  lead_email?: string;
+  lead_phone?: string;
+  lead_match_score?: number;
+  lead_status?: string;
+  current_stage_name?: string;
+  current_stage_number?: number;
+  current_stage_type?: string;
+  pipeline_name?: string;
+}
+
+export interface TouchLog {
+  id: string;
+  cadence_id: string;
+  stage_id: string | null;
+  touch_type: string;
+  owner: string;
+  status: string;
+  outcome: string | null;
+  outcome_notes: string | null;
+  call_prep: string | null;
+  email_metrics: string | null;
+  action_id: string | null;
+  gmail_message_id: string | null;
+  gmail_thread_id: string | null;
+  scheduled_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  // Joined fields
+  stage_name?: string;
+  stage_number?: number;
+  stage_type?: string;
+  framework?: string;
+  business_name?: string;
+  domain?: string;
+}
+
+export interface CadenceDashboard {
+  date: string;
+  due_touches: TouchLog[];
+  funnel: Array<{ stage_id: string; stage_name: string; stage_number: number; stage_type: string; cadence_count: number }>;
+  stalled: SalesCadence[];
+  summary: { active: number; won: number; lost: number; paused: number };
+  recent_outcomes: Array<{ outcome: string; count: number }>;
+}
+
+// Pipelines
+export async function listPipelines(): Promise<{ pipelines: SalesPipeline[] }> {
+  return execApi('/cadence/pipelines');
+}
+
+export async function getPipeline(id: string): Promise<{ pipeline: SalesPipeline; stages: PipelineStage[] }> {
+  return execApi(`/cadence/pipelines/${id}`);
+}
+
+export async function createPipeline(data: Partial<SalesPipeline>): Promise<{ ok: boolean; id: string }> {
+  return execApi('/cadence/pipelines', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function updatePipeline(id: string, data: Partial<SalesPipeline>): Promise<{ ok: boolean; id: string }> {
+  return execApi(`/cadence/pipelines/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+}
+
+export async function deletePipeline(id: string): Promise<{ ok: boolean; id: string }> {
+  return execApi(`/cadence/pipelines/${id}`, { method: 'DELETE' });
+}
+
+// Stages
+export async function listStages(pipelineId: string): Promise<{ stages: PipelineStage[] }> {
+  return execApi(`/cadence/pipelines/${pipelineId}/stages`);
+}
+
+export async function createStage(pipelineId: string, data: Partial<PipelineStage>): Promise<{ ok: boolean; id: string }> {
+  return execApi(`/cadence/pipelines/${pipelineId}/stages`, { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function updateStage(id: string, data: Partial<PipelineStage>): Promise<{ ok: boolean; id: string }> {
+  return execApi(`/cadence/stages/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+}
+
+export async function deleteStage(id: string): Promise<{ ok: boolean; id: string }> {
+  return execApi(`/cadence/stages/${id}`, { method: 'DELETE' });
+}
+
+// Cadences
+export async function listCadences(filters?: {
+  lead_id?: string; status?: string; pipeline_id?: string; health?: string; next_touch_before?: string;
+}): Promise<{ cadences: SalesCadence[] }> {
+  const params = new URLSearchParams();
+  if (filters?.lead_id) params.set('lead_id', filters.lead_id);
+  if (filters?.status) params.set('status', filters.status);
+  if (filters?.pipeline_id) params.set('pipeline_id', filters.pipeline_id);
+  if (filters?.health) params.set('health', filters.health);
+  if (filters?.next_touch_before) params.set('next_touch_before', filters.next_touch_before);
+  const qs = params.toString();
+  return execApi(`/cadence/cadences${qs ? `?${qs}` : ''}`);
+}
+
+export async function getCadence(id: string): Promise<{ cadence: SalesCadence; touches: TouchLog[]; stages: PipelineStage[] }> {
+  return execApi(`/cadence/cadences/${id}`);
+}
+
+export async function createCadence(data: { lead_id: string; pipeline_id?: string; priority?: string; owner_notes?: string }): Promise<{ ok: boolean; id: string }> {
+  return execApi('/cadence/cadences', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function updateCadence(id: string, data: Partial<SalesCadence>): Promise<{ ok: boolean; id: string }> {
+  return execApi(`/cadence/cadences/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+}
+
+export async function deleteCadence(id: string): Promise<{ ok: boolean; id: string }> {
+  return execApi(`/cadence/cadences/${id}`, { method: 'DELETE' });
+}
+
+export async function advanceCadence(id: string): Promise<{ ok: boolean; id: string; current_stage?: { id: string; name: string; stage_number: number }; next_touch_due?: string; status?: string }> {
+  return execApi(`/cadence/cadences/${id}/advance`, { method: 'POST' });
+}
+
+// Touches
+export async function listTouches(cadenceId: string): Promise<{ touches: TouchLog[] }> {
+  return execApi(`/cadence/cadences/${cadenceId}/touches`);
+}
+
+export async function createTouch(cadenceId: string, data: Partial<TouchLog>): Promise<{ ok: boolean; id: string }> {
+  return execApi(`/cadence/cadences/${cadenceId}/touches`, { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function updateTouch(id: string, data: Partial<TouchLog>): Promise<{ ok: boolean; id: string }> {
+  return execApi(`/cadence/touches/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+}
+
+// AI Call Prep
+export async function generateCallPrep(cadenceId: string, touchId?: string): Promise<{ ok: boolean; call_prep: Record<string, unknown> }> {
+  return execApi(`/cadence/cadences/${cadenceId}/call-prep`, {
+    method: 'POST',
+    body: JSON.stringify(touchId ? { touch_id: touchId } : {}),
+  });
+}
+
+// Dashboard
+export async function getCadenceDashboard(): Promise<CadenceDashboard> {
+  return execApi('/cadence/dashboard');
+}

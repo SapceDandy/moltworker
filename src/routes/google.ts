@@ -63,7 +63,7 @@ async function refreshAccessToken(
   return resp.json() as Promise<{ access_token: string; expires_in: number }>;
 }
 
-async function getValidAccessToken(
+export async function getValidAccessToken(
   integration: Record<string, unknown>,
   env: { GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string; TOKEN_ENCRYPTION_KEY?: string; DB: D1Database },
 ): Promise<string | null> {
@@ -96,7 +96,7 @@ async function getValidAccessToken(
 }
 
 // Helper to get integration by ID or first google account
-async function getIntegration(
+export async function getIntegration(
   db: D1Database,
   accountId?: string,
 ): Promise<Record<string, unknown> | null> {
