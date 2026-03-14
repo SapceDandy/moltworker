@@ -8,18 +8,46 @@ import { sendDiscordDM } from './discord';
  */
 export async function morningBrief(env: MoltbotEnv): Promise<void> {
   console.log('[CRON] Running morning brief');
+  const today = new Date().toISOString().split('T')[0];
 
-  // Skip if no active projects — avoids Claude API call entirely
+  try {
+    await _morningBriefInner(env, today);
+  } catch (err) {
+    console.error('[CRON] Morning brief top-level crash:', err);
+    // Guarantee Discord DM even on total crash
+    if (env.DISCORD_BOT_TOKEN && env.DISCORD_OWNER_USER_ID) {
+      try {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        await sendDiscordDM(
+          env.DISCORD_BOT_TOKEN,
+          env.DISCORD_OWNER_USER_ID,
+          `🔥 **Morning Brief — ${today}**\n\nCritical crash: ${errMsg}\n\nCheck worker logs with \`wrangler tail\`.`,
+        );
+      } catch (dmErr) {
+        console.error('[CRON] Crash DM also failed:', dmErr);
+      }
+    }
+  }
+}
+
+async function _morningBriefInner(env: MoltbotEnv, today: string): Promise<void> {
+  // Check active projects — skip AI call but still send DM
   const projectCount = await env.DB.prepare(
     "SELECT COUNT(*) as c FROM projects WHERE status = 'active'",
   ).first<{ c: number }>();
   if (!projectCount?.c) {
-    console.log('[CRON] No active projects, skipping morning brief');
+    console.log('[CRON] No active projects, sending info DM');
+    if (env.DISCORD_BOT_TOKEN && env.DISCORD_OWNER_USER_ID) {
+      await sendDiscordDM(
+        env.DISCORD_BOT_TOKEN,
+        env.DISCORD_OWNER_USER_ID,
+        `☀️ **Morning Brief — ${today}**\n\nNo active projects found. Create a project in the dashboard to start getting daily briefs.`,
+      );
+    }
     return;
   }
 
   // Fetch dashboard data from the Worker's own D1 database
-  const today = new Date().toISOString().split('T')[0];
   let dashboardData: Record<string, unknown> = {};
 
   try {
@@ -171,6 +199,7 @@ export async function morningBrief(env: MoltbotEnv): Promise<void> {
     console.error('[CRON] Agent log failed:', err);
   }
 }
+
 
 /**
  * Auto-create reminders for tasks with upcoming deadlines and project target dates.

@@ -2,6 +2,7 @@ import type { Sandbox } from '@cloudflare/sandbox';
 import { MOLTBOT_PORT } from '../config';
 import type { MoltbotEnv } from '../types';
 
+const CRON_CODE_VERSION = 'v2-2026-03-13';
 const HAIKU_MODEL = 'claude-haiku-4-5-20251001';
 const OPENAI_MINI_MODEL = 'gpt-4o-mini';
 const CRON_SYSTEM_PROMPT =
@@ -70,6 +71,7 @@ export async function generateCronBrief(
   message: string,
   env: MoltbotEnv,
 ): Promise<{ ok: boolean; text: string }> {
+  console.log(`[rpc] generateCronBrief code_version=${CRON_CODE_VERSION} haiku_model=${HAIKU_MODEL}`);
   try {
     // 1. CF AI Gateway with explicit model override (highest priority — matches container config)
     if (env.CF_AI_GATEWAY_MODEL && env.CLOUDFLARE_AI_GATEWAY_API_KEY &&

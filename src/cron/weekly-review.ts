@@ -7,17 +7,43 @@ import { sendDiscordDM } from './discord';
  */
 export async function weeklyReview(env: MoltbotEnv): Promise<void> {
   console.log('[CRON] Running weekly review');
+  const today = new Date().toISOString().split('T')[0];
 
-  // Skip if no active projects — avoids Claude API call entirely
+  try {
+    await _weeklyReviewInner(env, today);
+  } catch (err) {
+    console.error('[CRON] Weekly review top-level crash:', err);
+    if (env.DISCORD_BOT_TOKEN && env.DISCORD_OWNER_USER_ID) {
+      try {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        await sendDiscordDM(
+          env.DISCORD_BOT_TOKEN,
+          env.DISCORD_OWNER_USER_ID,
+          `🔥 **Weekly Review — ${today}**\n\nCritical crash: ${errMsg}\n\nCheck worker logs with \`wrangler tail\`.`,
+        );
+      } catch (dmErr) {
+        console.error('[CRON] Crash DM also failed:', dmErr);
+      }
+    }
+  }
+}
+
+async function _weeklyReviewInner(env: MoltbotEnv, today: string): Promise<void> {
   const projectCount = await env.DB.prepare(
     "SELECT COUNT(*) as c FROM projects WHERE status = 'active'",
   ).first<{ c: number }>();
   if (!projectCount?.c) {
-    console.log('[CRON] No active projects, skipping weekly review');
+    console.log('[CRON] No active projects, sending info DM');
+    if (env.DISCORD_BOT_TOKEN && env.DISCORD_OWNER_USER_ID) {
+      await sendDiscordDM(
+        env.DISCORD_BOT_TOKEN,
+        env.DISCORD_OWNER_USER_ID,
+        `📊 **Weekly Review — ${today}**\n\nNo active projects found. Nothing to review.`,
+      );
+    }
     return;
   }
 
-  const today = new Date().toISOString().split('T')[0];
   let reviewData: Record<string, unknown> = {};
 
   try {

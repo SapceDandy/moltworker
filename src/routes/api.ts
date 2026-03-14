@@ -18,6 +18,7 @@ import { google } from './google';
 import { comments } from './comments';
 import { leads as leadsRoutes } from './leads';
 import { actions } from './actions';
+import { morningBrief } from '../cron/morning-brief';
 
 // CLI commands can take 10-15 seconds to complete due to WebSocket connection overhead
 const CLI_TIMEOUT_MS = 20000;
@@ -358,5 +359,15 @@ api.route('/google', google);
 api.route('/comments', comments);
 api.route('/leads', leadsRoutes);
 api.route('/actions', actions);
+
+// Manual cron trigger for debugging (admin only)
+adminApi.post('/trigger-brief', async (c) => {
+  try {
+    await morningBrief(c.env);
+    return c.json({ ok: true, message: 'Morning brief triggered manually' });
+  } catch (err) {
+    return c.json({ ok: false, error: err instanceof Error ? err.message : String(err) }, 500);
+  }
+});
 
 export { api };

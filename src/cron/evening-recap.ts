@@ -8,17 +8,44 @@ import { sendDiscordDM } from './discord';
  */
 export async function eveningRecap(env: MoltbotEnv): Promise<void> {
   console.log('[CRON] Running evening recap');
+  const today = new Date().toISOString().split('T')[0];
 
-  // Skip if no active projects — avoids Claude API call entirely
+  try {
+    await _eveningRecapInner(env, today);
+  } catch (err) {
+    console.error('[CRON] Evening recap top-level crash:', err);
+    if (env.DISCORD_BOT_TOKEN && env.DISCORD_OWNER_USER_ID) {
+      try {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        await sendDiscordDM(
+          env.DISCORD_BOT_TOKEN,
+          env.DISCORD_OWNER_USER_ID,
+          `🔥 **Evening Recap — ${today}**\n\nCritical crash: ${errMsg}\n\nCheck worker logs with \`wrangler tail\`.`,
+        );
+      } catch (dmErr) {
+        console.error('[CRON] Crash DM also failed:', dmErr);
+      }
+    }
+  }
+}
+
+async function _eveningRecapInner(env: MoltbotEnv, today: string): Promise<void> {
+  // Check active projects — skip AI call but still send DM
   const projectCount = await env.DB.prepare(
     "SELECT COUNT(*) as c FROM projects WHERE status = 'active'",
   ).first<{ c: number }>();
   if (!projectCount?.c) {
-    console.log('[CRON] No active projects, skipping evening recap');
+    console.log('[CRON] No active projects, sending info DM');
+    if (env.DISCORD_BOT_TOKEN && env.DISCORD_OWNER_USER_ID) {
+      await sendDiscordDM(
+        env.DISCORD_BOT_TOKEN,
+        env.DISCORD_OWNER_USER_ID,
+        `🌙 **Evening Recap — ${today}**\n\nNo active projects found. Nothing to recap.`,
+      );
+    }
     return;
   }
 
-  const today = new Date().toISOString().split('T')[0];
   let progressData: Record<string, unknown> = {};
 
   try {
