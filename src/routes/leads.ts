@@ -172,6 +172,43 @@ leads.get('/', async (c) => {
   }
 });
 
+// GET /leads/export.csv - Download all leads as CSV
+// NOTE: Must be before /:id route to avoid being matched as an ID
+leads.get('/export.csv', async (c) => {
+  try {
+    const { results } = await c.env.DB.prepare(
+      `SELECT
+        domain, business_name, website, phone, email, city, state, category,
+        owner_or_people, linkedin_company, linkedin_people, contact_page_url,
+        source_urls, evidence_snippet, match_score, notes, lead_status, created_at, updated_at
+       FROM leads
+       ORDER BY COALESCE(match_score, 0) DESC, updated_at DESC`,
+    ).all();
+
+    const csvHeaders = [
+      'domain', 'business_name', 'website', 'phone', 'email', 'city', 'state', 'category',
+      'owner_or_people', 'linkedin_company', 'linkedin_people', 'contact_page_url',
+      'source_urls', 'evidence_snippet', 'match_score', 'notes', 'lead_status', 'created_at', 'updated_at',
+    ];
+
+    const csvLines = [csvHeaders.join(',')];
+    for (const r of results as Record<string, unknown>[]) {
+      csvLines.push(csvHeaders.map((h) => toCsvValue(r[h])).join(','));
+    }
+
+    return new Response(csvLines.join('\n'), {
+      headers: {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': 'attachment; filename="leads.csv"',
+      },
+    });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[leads] Export failed:', msg);
+    return c.json({ error: { code: 'EXPORT_FAILED', message: msg } }, 500);
+  }
+});
+
 // GET /leads/:id - Get a single lead
 leads.get('/:id', async (c) => {
   try {
@@ -421,42 +458,6 @@ leads.post('/import', async (c) => {
     const msg = error instanceof Error ? error.message : 'Unknown error';
     console.error('[leads] Import failed:', msg);
     return c.json({ error: { code: 'IMPORT_FAILED', message: msg } }, 500);
-  }
-});
-
-// GET /leads/export.csv - Download all leads as CSV
-leads.get('/export.csv', async (c) => {
-  try {
-    const { results } = await c.env.DB.prepare(
-      `SELECT
-        domain, business_name, website, phone, email, city, state, category,
-        owner_or_people, linkedin_company, linkedin_people, contact_page_url,
-        source_urls, evidence_snippet, match_score, notes, lead_status, created_at, updated_at
-       FROM leads
-       ORDER BY COALESCE(match_score, 0) DESC, updated_at DESC`,
-    ).all();
-
-    const csvHeaders = [
-      'domain', 'business_name', 'website', 'phone', 'email', 'city', 'state', 'category',
-      'owner_or_people', 'linkedin_company', 'linkedin_people', 'contact_page_url',
-      'source_urls', 'evidence_snippet', 'match_score', 'notes', 'lead_status', 'created_at', 'updated_at',
-    ];
-
-    const csvLines = [csvHeaders.join(',')];
-    for (const r of results as Record<string, unknown>[]) {
-      csvLines.push(csvHeaders.map((h) => toCsvValue(r[h])).join(','));
-    }
-
-    return new Response(csvLines.join('\n'), {
-      headers: {
-        'Content-Type': 'text/csv; charset=utf-8',
-        'Content-Disposition': 'attachment; filename="leads.csv"',
-      },
-    });
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : 'Unknown error';
-    console.error('[leads] Export failed:', msg);
-    return c.json({ error: { code: 'EXPORT_FAILED', message: msg } }, 500);
   }
 });
 

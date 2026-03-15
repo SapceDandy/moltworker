@@ -336,7 +336,7 @@ if r2_configured; then
 fi
 
 # ============================================================
-# START GATEWAY
+# START GATEWAY (supervised restart loop)
 # ============================================================
 echo "Starting OpenClaw Gateway..."
 echo "Gateway will be available on port 18789"
@@ -346,10 +346,63 @@ rm -f "$CONFIG_DIR/gateway.lock" 2>/dev/null || true
 
 echo "Dev mode: ${OPENCLAW_DEV_MODE:-false}"
 
+# Build gateway command
 if [ -n "$OPENCLAW_GATEWAY_TOKEN" ]; then
-    echo "Starting gateway with token auth..."
-    exec openclaw gateway --port 18789 --verbose --allow-unconfigured --bind lan --token "$OPENCLAW_GATEWAY_TOKEN"
+    GATEWAY_CMD="openclaw gateway --port 18789 --verbose --allow-unconfigured --bind lan --token $OPENCLAW_GATEWAY_TOKEN"
+    echo "Gateway mode: token auth"
 else
-    echo "Starting gateway with device pairing (no token)..."
-    exec openclaw gateway --port 18789 --verbose --allow-unconfigured --bind lan
+    GATEWAY_CMD="openclaw gateway --port 18789 --verbose --allow-unconfigured --bind lan"
+    echo "Gateway mode: device pairing (no token)"
 fi
+
+# Trap SIGTERM/SIGINT for clean Cloudflare container shutdown
+GATEWAY_PID=""
+cleanup() {
+    echo "[supervisor] Received shutdown signal, stopping gateway..."
+    if [ -n "$GATEWAY_PID" ] && kill -0 "$GATEWAY_PID" 2>/dev/null; then
+        kill -TERM "$GATEWAY_PID" 2>/dev/null
+        wait "$GATEWAY_PID" 2>/dev/null
+    fi
+    echo "[supervisor] Gateway stopped, exiting."
+    exit 0
+}
+trap cleanup SIGTERM SIGINT
+
+# Supervised restart loop: auto-restart gateway on crash
+MAX_RESTARTS=50
+RESTART_COUNT=0
+RESTART_DELAY=5
+
+while true; do
+    rm -f /tmp/openclaw-gateway.lock 2>/dev/null || true
+    rm -f "$CONFIG_DIR/gateway.lock" 2>/dev/null || true
+
+    if [ "$RESTART_COUNT" -gt 0 ]; then
+        echo "[supervisor] Restarting gateway (attempt $RESTART_COUNT/$MAX_RESTARTS)..."
+    fi
+
+    $GATEWAY_CMD &
+    GATEWAY_PID=$!
+    echo "[supervisor] Gateway started (PID: $GATEWAY_PID)"
+
+    wait "$GATEWAY_PID"
+    EXIT_CODE=$?
+    GATEWAY_PID=""
+
+    # Exit cleanly if we were signalled (trap handler already ran or will run)
+    if [ $EXIT_CODE -eq 0 ]; then
+        echo "[supervisor] Gateway exited cleanly (code 0), stopping."
+        break
+    fi
+
+    RESTART_COUNT=$((RESTART_COUNT + 1))
+    echo "[supervisor] Gateway exited with code $EXIT_CODE at $(date -Iseconds)"
+
+    if [ "$RESTART_COUNT" -ge "$MAX_RESTARTS" ]; then
+        echo "[supervisor] Max restarts ($MAX_RESTARTS) reached, giving up."
+        exit 1
+    fi
+
+    echo "[supervisor] Restarting in ${RESTART_DELAY}s..."
+    sleep "$RESTART_DELAY"
+done

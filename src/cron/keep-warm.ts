@@ -19,7 +19,11 @@ export async function keepWarm(env: MoltbotEnv): Promise<void> {
       new Request('http://localhost/health'),
       MOLTBOT_PORT,
     );
-    console.log('[CRON] Keep-warm health:', healthResp.status);
+    if (healthResp.status === 200) {
+      console.log('[CRON] Keep-warm health: OK');
+    } else {
+      console.error('[CRON] Keep-warm health: UNHEALTHY status', healthResp.status, '— gateway may need restart');
+    }
   } catch (err) {
     console.error('[CRON] Keep-warm failed:', err);
   }
