@@ -10,6 +10,7 @@ const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/tasks',
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/gmail.send',
+  'https://www.googleapis.com/auth/gmail.compose',
   'https://www.googleapis.com/auth/drive',
   'https://www.googleapis.com/auth/spreadsheets',
   'https://www.googleapis.com/auth/documents',
@@ -696,6 +697,351 @@ google.post('/gmail/send', async (c) => {
     const msg = err instanceof Error ? err.message : 'Unknown error';
     console.error('[gmail] Send error:', msg);
     return c.json({ error: { code: 'GMAIL_SEND_FAILED', message: msg } }, 500);
+  }
+});
+
+// ============================================================
+// Gmail Drafts API
+// ============================================================
+
+/**
+ * Build an RFC 2822 email and base64url-encode it.
+ * Shared by gmail/send and gmail/drafts endpoints.
+ */
+function buildRawEmail(opts: {
+  from: string; to: string; subject: string;
+  body: string; isHtml: boolean;
+  cc?: string; bcc?: string;
+  threadId?: string; inReplyTo?: string; references?: string;
+}): string {
+  let raw = `From: ${opts.from}\r\nTo: ${opts.to}\r\nSubject: ${opts.subject}\r\n`;
+  if (opts.cc) raw += `Cc: ${opts.cc}\r\n`;
+  if (opts.bcc) raw += `Bcc: ${opts.bcc}\r\n`;
+  if (opts.inReplyTo) raw += `In-Reply-To: ${opts.inReplyTo}\r\n`;
+  if (opts.references) raw += `References: ${opts.references}\r\n`;
+  raw += `Content-Type: ${opts.isHtml ? 'text/html' : 'text/plain'}; charset=utf-8\r\n`;
+  raw += `\r\n${opts.body}`;
+
+  return btoa(unescape(encodeURIComponent(raw)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+}
+
+// POST /google/gmail/drafts - Create a draft (does NOT send)
+google.post('/gmail/drafts', async (c) => {
+  const configErr = requireGoogleConfig(c);
+  if (configErr) return c.json({ error: configErr.error }, 400);
+
+  const body = await c.req.json().catch(() => null);
+  if (!body || typeof body !== 'object') {
+    return c.json({ error: { code: 'INVALID_JSON', message: 'Invalid JSON body' } }, 400);
+  }
+
+  const data = body as Record<string, unknown>;
+  const to = (data.to as string) || '';
+  const subject = (data.subject as string) || '';
+  const bodyText = (data.body as string) || (data.html as string) || '';
+  const cc = (data.cc as string) || '';
+  const bcc = (data.bcc as string) || '';
+  const threadId = (data.thread_id as string) || '';
+  const inReplyTo = (data.in_reply_to as string) || '';
+  const references = (data.references as string) || '';
+  const accountId = (data.account_id as string) || undefined;
+  const isHtml = !!(data.html as string);
+
+  if (!to || !subject) {
+    return c.json({ error: { code: 'VALIDATION', message: 'to and subject are required' } }, 400);
+  }
+
+  try {
+    const integration = await getIntegration(c.env.DB, accountId);
+    if (!integration) {
+      return c.json({ error: { code: 'NO_ACCOUNT', message: 'No Google account connected' } }, 400);
+    }
+
+    const token = await getValidAccessToken(integration, c.env);
+    if (!token) {
+      return c.json({ error: { code: 'TOKEN_EXPIRED', message: 'Could not get valid access token' } }, 401);
+    }
+
+    const fromEmail = (integration.account_email as string) || '';
+    const encoded = buildRawEmail({
+      from: fromEmail, to, subject, body: bodyText, isHtml,
+      cc, bcc, inReplyTo, references,
+    });
+
+    const draftBody: Record<string, unknown> = {
+      message: { raw: encoded },
+    };
+    if (threadId) draftBody.message = { raw: encoded, threadId };
+
+    const resp = await fetch(
+      'https://www.googleapis.com/gmail/v1/users/me/drafts',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(draftBody),
+      },
+    );
+
+    if (!resp.ok) {
+      const errBody = await resp.text();
+      console.error('[gmail] Draft create failed:', errBody);
+      return c.json({ error: { code: 'GMAIL_DRAFT_FAILED', message: errBody } }, resp.status as 400);
+    }
+
+    const result = (await resp.json()) as Record<string, unknown>;
+    return c.json({ ok: true, draft_id: result.id, message_id: (result.message as Record<string, unknown>)?.id }, 201);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[gmail] Draft create error:', msg);
+    return c.json({ error: { code: 'GMAIL_DRAFT_FAILED', message: msg } }, 500);
+  }
+});
+
+// GET /google/gmail/drafts - List drafts
+google.get('/gmail/drafts', async (c) => {
+  const configErr = requireGoogleConfig(c);
+  if (configErr) return c.json({ error: configErr.error }, 400);
+
+  const accountId = c.req.query('account_id');
+  const maxResults = Math.min(Number(c.req.query('max_results')) || 20, 100);
+  const pageToken = c.req.query('page_token') || '';
+
+  try {
+    const integration = await getIntegration(c.env.DB, accountId);
+    if (!integration) {
+      return c.json({ drafts: [], message: 'No Google account connected' });
+    }
+
+    const token = await getValidAccessToken(integration, c.env);
+    if (!token) {
+      return c.json({ error: { code: 'TOKEN_EXPIRED', message: 'Could not get valid access token' } }, 401);
+    }
+
+    const params = new URLSearchParams({ maxResults: maxResults.toString() });
+    if (pageToken) params.set('pageToken', pageToken);
+
+    const resp = await fetch(
+      `https://www.googleapis.com/gmail/v1/users/me/drafts?${params}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+
+    if (!resp.ok) {
+      const errBody = await resp.text();
+      return c.json({ error: { code: 'GOOGLE_API_ERROR', message: errBody } }, 500);
+    }
+
+    const data = (await resp.json()) as { drafts?: Array<Record<string, unknown>>; nextPageToken?: string; resultSizeEstimate?: number };
+    return c.json({
+      drafts: data.drafts ?? [],
+      nextPageToken: data.nextPageToken,
+      total: data.resultSizeEstimate,
+      _account_id: integration.id,
+      _account_email: integration.account_email,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    return c.json({ error: { code: 'GMAIL_DRAFTS_LIST_FAILED', message: msg } }, 500);
+  }
+});
+
+// GET /google/gmail/drafts/:id - Get a specific draft
+google.get('/gmail/drafts/:id', async (c) => {
+  const configErr = requireGoogleConfig(c);
+  if (configErr) return c.json({ error: configErr.error }, 400);
+
+  const draftId = c.req.param('id');
+  const accountId = c.req.query('account_id');
+
+  try {
+    const integration = await getIntegration(c.env.DB, accountId);
+    if (!integration) {
+      return c.json({ error: { code: 'NO_ACCOUNT', message: 'No Google account connected' } }, 400);
+    }
+
+    const token = await getValidAccessToken(integration, c.env);
+    if (!token) {
+      return c.json({ error: { code: 'TOKEN_EXPIRED', message: 'Could not get valid access token' } }, 401);
+    }
+
+    const resp = await fetch(
+      `https://www.googleapis.com/gmail/v1/users/me/drafts/${draftId}?format=full`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+
+    if (!resp.ok) {
+      const errBody = await resp.text();
+      return c.json({ error: { code: 'GOOGLE_API_ERROR', message: errBody } }, resp.status as 400);
+    }
+
+    const draft = await resp.json();
+    return c.json({ draft });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    return c.json({ error: { code: 'GMAIL_DRAFT_GET_FAILED', message: msg } }, 500);
+  }
+});
+
+// PUT /google/gmail/drafts/:id - Update a draft
+google.put('/gmail/drafts/:id', async (c) => {
+  const configErr = requireGoogleConfig(c);
+  if (configErr) return c.json({ error: configErr.error }, 400);
+
+  const draftId = c.req.param('id');
+  const body = await c.req.json().catch(() => null);
+  if (!body || typeof body !== 'object') {
+    return c.json({ error: { code: 'INVALID_JSON', message: 'Invalid JSON body' } }, 400);
+  }
+
+  const data = body as Record<string, unknown>;
+  const to = (data.to as string) || '';
+  const subject = (data.subject as string) || '';
+  const bodyText = (data.body as string) || (data.html as string) || '';
+  const cc = (data.cc as string) || '';
+  const bcc = (data.bcc as string) || '';
+  const threadId = (data.thread_id as string) || '';
+  const accountId = (data.account_id as string) || undefined;
+  const isHtml = !!(data.html as string);
+
+  if (!to || !subject) {
+    return c.json({ error: { code: 'VALIDATION', message: 'to and subject are required' } }, 400);
+  }
+
+  try {
+    const integration = await getIntegration(c.env.DB, accountId);
+    if (!integration) {
+      return c.json({ error: { code: 'NO_ACCOUNT', message: 'No Google account connected' } }, 400);
+    }
+
+    const token = await getValidAccessToken(integration, c.env);
+    if (!token) {
+      return c.json({ error: { code: 'TOKEN_EXPIRED', message: 'Could not get valid access token' } }, 401);
+    }
+
+    const fromEmail = (integration.account_email as string) || '';
+    const encoded = buildRawEmail({
+      from: fromEmail, to, subject, body: bodyText, isHtml, cc, bcc,
+    });
+
+    const draftBody: Record<string, unknown> = {
+      message: { raw: encoded },
+    };
+    if (threadId) draftBody.message = { raw: encoded, threadId };
+
+    const resp = await fetch(
+      `https://www.googleapis.com/gmail/v1/users/me/drafts/${draftId}`,
+      {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(draftBody),
+      },
+    );
+
+    if (!resp.ok) {
+      const errBody = await resp.text();
+      console.error('[gmail] Draft update failed:', errBody);
+      return c.json({ error: { code: 'GMAIL_DRAFT_UPDATE_FAILED', message: errBody } }, resp.status as 400);
+    }
+
+    const result = (await resp.json()) as Record<string, unknown>;
+    return c.json({ ok: true, draft_id: result.id });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    return c.json({ error: { code: 'GMAIL_DRAFT_UPDATE_FAILED', message: msg } }, 500);
+  }
+});
+
+// DELETE /google/gmail/drafts/:id - Delete a draft
+google.delete('/gmail/drafts/:id', async (c) => {
+  const configErr = requireGoogleConfig(c);
+  if (configErr) return c.json({ error: configErr.error }, 400);
+
+  const draftId = c.req.param('id');
+  const accountId = c.req.query('account_id');
+
+  try {
+    const integration = await getIntegration(c.env.DB, accountId);
+    if (!integration) {
+      return c.json({ error: { code: 'NO_ACCOUNT', message: 'No Google account connected' } }, 400);
+    }
+
+    const token = await getValidAccessToken(integration, c.env);
+    if (!token) {
+      return c.json({ error: { code: 'TOKEN_EXPIRED', message: 'Could not get valid access token' } }, 401);
+    }
+
+    const resp = await fetch(
+      `https://www.googleapis.com/gmail/v1/users/me/drafts/${draftId}`,
+      {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    );
+
+    if (!resp.ok) {
+      const errBody = await resp.text();
+      return c.json({ error: { code: 'GOOGLE_API_ERROR', message: errBody } }, resp.status as 400);
+    }
+
+    return c.json({ ok: true, deleted: draftId });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    return c.json({ error: { code: 'GMAIL_DRAFT_DELETE_FAILED', message: msg } }, 500);
+  }
+});
+
+// POST /google/gmail/drafts/:id/send - Send an existing draft
+google.post('/gmail/drafts/:id/send', async (c) => {
+  const configErr = requireGoogleConfig(c);
+  if (configErr) return c.json({ error: configErr.error }, 400);
+
+  const draftId = c.req.param('id');
+  const body = await c.req.json().catch(() => ({}));
+  const accountId = ((body as Record<string, unknown>).account_id as string) || undefined;
+
+  try {
+    const integration = await getIntegration(c.env.DB, accountId);
+    if (!integration) {
+      return c.json({ error: { code: 'NO_ACCOUNT', message: 'No Google account connected' } }, 400);
+    }
+
+    const token = await getValidAccessToken(integration, c.env);
+    if (!token) {
+      return c.json({ error: { code: 'TOKEN_EXPIRED', message: 'Could not get valid access token' } }, 401);
+    }
+
+    const resp = await fetch(
+      'https://www.googleapis.com/gmail/v1/users/me/drafts/send',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ id: draftId }),
+      },
+    );
+
+    if (!resp.ok) {
+      const errBody = await resp.text();
+      console.error('[gmail] Draft send failed:', errBody);
+      return c.json({ error: { code: 'GMAIL_DRAFT_SEND_FAILED', message: errBody } }, resp.status as 400);
+    }
+
+    const result = (await resp.json()) as Record<string, unknown>;
+    return c.json({ ok: true, message_id: result.id });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[gmail] Draft send error:', msg);
+    return c.json({ error: { code: 'GMAIL_DRAFT_SEND_FAILED', message: msg } }, 500);
   }
 });
 

@@ -32,7 +32,7 @@ RUN mkdir -p /root/.openclaw \
     && mkdir -p /root/clawd/skills
 
 # Copy startup script — RUN echo busts Docker layer cache for all COPY layers below
-RUN echo "build-v49-supervised-restart" > /tmp/.build-version
+RUN echo "build-v50-gmail-drafts" > /tmp/.build-version
 COPY start-openclaw.sh /usr/local/bin/start-openclaw.sh
 RUN chmod +x /usr/local/bin/start-openclaw.sh
 
