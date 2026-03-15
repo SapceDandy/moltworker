@@ -2,11 +2,13 @@ import type { Sandbox } from '@cloudflare/sandbox';
 import { MOLTBOT_PORT } from '../config';
 import type { MoltbotEnv } from '../types';
 
-const CRON_CODE_VERSION = 'v2-2026-03-13';
+const CRON_CODE_VERSION = 'v3-2026-03-15';
 const HAIKU_MODEL = 'claude-haiku-4-5-20251001';
 const OPENAI_MINI_MODEL = 'gpt-4o-mini';
 const CRON_SYSTEM_PROMPT =
   'You are Kudjo, a concise executive assistant. Respond with bullet points. Keep under 15 lines. Be direct, no fluff.';
+
+type ProviderCall = () => Promise<{ ok: boolean; text: string }>;
 
 /** Call Anthropic Messages API */
 async function callAnthropic(
@@ -63,71 +65,106 @@ async function callOpenAI(
 }
 
 /**
+ * Build an ordered list of provider calls from the environment.
+ * Each entry is a lazy thunk so we only call the provider if prior ones failed.
+ */
+function buildProviderChain(
+  env: MoltbotEnv, message: string, systemPrompt?: string,
+): Array<{ name: string; call: ProviderCall }> {
+  const chain: Array<{ name: string; call: ProviderCall }> = [];
+
+  // 1. CF AI Gateway with explicit model override (highest priority)
+  if (env.CF_AI_GATEWAY_MODEL && env.CLOUDFLARE_AI_GATEWAY_API_KEY &&
+      env.CF_AI_GATEWAY_ACCOUNT_ID && env.CF_AI_GATEWAY_GATEWAY_ID) {
+    const raw = env.CF_AI_GATEWAY_MODEL;
+    const slashIdx = raw.indexOf('/');
+    const gwProvider = slashIdx > 0 ? raw.substring(0, slashIdx) : 'anthropic';
+    const modelId = slashIdx > 0 ? raw.substring(slashIdx + 1) : raw;
+    let gwBase = `https://gateway.ai.cloudflare.com/v1/${env.CF_AI_GATEWAY_ACCOUNT_ID}/${env.CF_AI_GATEWAY_GATEWAY_ID}/${gwProvider}`;
+    if (gwProvider === 'workers-ai') gwBase += '/v1';
+    if (gwProvider === 'anthropic') {
+      chain.push({ name: `cf-ai-gw-override(${modelId})`, call: () => callAnthropic(`${gwBase}/v1/messages`, env.CLOUDFLARE_AI_GATEWAY_API_KEY!, modelId, message, systemPrompt) });
+    } else {
+      chain.push({ name: `cf-ai-gw-override(${modelId})`, call: () => callOpenAI(`${gwBase}/chat/completions`, env.CLOUDFLARE_AI_GATEWAY_API_KEY!, modelId, message, systemPrompt) });
+    }
+  }
+
+  // 2. Legacy AI Gateway
+  if (env.AI_GATEWAY_API_KEY && env.AI_GATEWAY_BASE_URL) {
+    const baseUrl = env.AI_GATEWAY_BASE_URL.replace(/\/+$/, '');
+    chain.push({ name: 'legacy-ai-gateway', call: () => callAnthropic(`${baseUrl}/v1/messages`, env.AI_GATEWAY_API_KEY!, HAIKU_MODEL, message, systemPrompt) });
+  }
+
+  // 3. Direct Anthropic
+  if (env.ANTHROPIC_API_KEY) {
+    const baseUrl = env.ANTHROPIC_BASE_URL?.replace(/\/+$/, '') || 'https://api.anthropic.com';
+    chain.push({ name: 'direct-anthropic', call: () => callAnthropic(`${baseUrl}/v1/messages`, env.ANTHROPIC_API_KEY!, HAIKU_MODEL, message, systemPrompt) });
+  }
+
+  // 4. Native CF AI Gateway (no model override)
+  if (env.CLOUDFLARE_AI_GATEWAY_API_KEY && env.CF_AI_GATEWAY_ACCOUNT_ID && env.CF_AI_GATEWAY_GATEWAY_ID) {
+    const baseUrl = `https://gateway.ai.cloudflare.com/v1/${env.CF_AI_GATEWAY_ACCOUNT_ID}/${env.CF_AI_GATEWAY_GATEWAY_ID}/anthropic`;
+    chain.push({ name: 'cf-ai-gw-anthropic', call: () => callAnthropic(`${baseUrl}/v1/messages`, env.CLOUDFLARE_AI_GATEWAY_API_KEY!, HAIKU_MODEL, message, systemPrompt) });
+  }
+
+  // 5. Direct OpenAI
+  if (env.OPENAI_API_KEY) {
+    chain.push({ name: 'direct-openai', call: () => callOpenAI('https://api.openai.com/v1/chat/completions', env.OPENAI_API_KEY!, OPENAI_MINI_MODEL, message, systemPrompt) });
+  }
+
+  return chain;
+}
+
+/**
+ * Try each provider in the chain until one succeeds.
+ * If all fail, return the last error.
+ */
+async function tryProviderChain(
+  chain: Array<{ name: string; call: ProviderCall }>,
+): Promise<{ ok: boolean; text: string }> {
+  if (chain.length === 0) {
+    console.error('[rpc] No API keys configured');
+    return { ok: false, text: 'No API key configured' };
+  }
+
+  let lastResult: { ok: boolean; text: string } = { ok: false, text: 'No providers available' };
+  for (const provider of chain) {
+    try {
+      console.log(`[rpc] Trying provider: ${provider.name}`);
+      const result = await provider.call();
+      if (result.ok) {
+        console.log(`[rpc] Provider ${provider.name} succeeded`);
+        return result;
+      }
+      // Provider responded but returned an error — try next
+      console.warn(`[rpc] Provider ${provider.name} failed: ${result.text.slice(0, 150)}`);
+      lastResult = result;
+    } catch (err) {
+      console.error(`[rpc] Provider ${provider.name} threw:`, err);
+      lastResult = { ok: false, text: `${provider.name}: ${String(err)}` };
+    }
+  }
+
+  console.error('[rpc] All providers failed');
+  return lastResult;
+}
+
+/**
  * Generate a cron brief using the best available AI provider.
- * Supports: CF AI Gateway (with model override), legacy AI Gateway,
- * direct Anthropic, native CF AI Gateway, and direct OpenAI.
+ * Tries each configured provider in priority order; falls through on failure.
  */
 export async function generateCronBrief(
   message: string,
   env: MoltbotEnv,
 ): Promise<{ ok: boolean; text: string }> {
   console.log(`[rpc] generateCronBrief code_version=${CRON_CODE_VERSION} haiku_model=${HAIKU_MODEL}`);
-  try {
-    // 1. CF AI Gateway with explicit model override (highest priority — matches container config)
-    if (env.CF_AI_GATEWAY_MODEL && env.CLOUDFLARE_AI_GATEWAY_API_KEY &&
-        env.CF_AI_GATEWAY_ACCOUNT_ID && env.CF_AI_GATEWAY_GATEWAY_ID) {
-      const raw = env.CF_AI_GATEWAY_MODEL;
-      const slashIdx = raw.indexOf('/');
-      const gwProvider = slashIdx > 0 ? raw.substring(0, slashIdx) : 'anthropic';
-      const modelId = slashIdx > 0 ? raw.substring(slashIdx + 1) : raw;
-      let gwBase = `https://gateway.ai.cloudflare.com/v1/${env.CF_AI_GATEWAY_ACCOUNT_ID}/${env.CF_AI_GATEWAY_GATEWAY_ID}/${gwProvider}`;
-      if (gwProvider === 'workers-ai') gwBase += '/v1';
-
-      console.log(`[rpc] Using CF AI Gateway model override: provider=${gwProvider} model=${modelId}`);
-      if (gwProvider === 'anthropic') {
-        return await callAnthropic(`${gwBase}/v1/messages`, env.CLOUDFLARE_AI_GATEWAY_API_KEY, modelId, message);
-      }
-      return await callOpenAI(`${gwBase}/chat/completions`, env.CLOUDFLARE_AI_GATEWAY_API_KEY, modelId, message);
-    }
-
-    // 2. Legacy AI Gateway (routes through Anthropic base URL)
-    if (env.AI_GATEWAY_API_KEY && env.AI_GATEWAY_BASE_URL) {
-      const baseUrl = env.AI_GATEWAY_BASE_URL.replace(/\/+$/, '');
-      console.log('[rpc] Using legacy AI Gateway');
-      return await callAnthropic(`${baseUrl}/v1/messages`, env.AI_GATEWAY_API_KEY, HAIKU_MODEL, message);
-    }
-
-    // 3. Direct Anthropic
-    if (env.ANTHROPIC_API_KEY) {
-      const baseUrl = env.ANTHROPIC_BASE_URL?.replace(/\/+$/, '') || 'https://api.anthropic.com';
-      console.log('[rpc] Using direct Anthropic');
-      return await callAnthropic(`${baseUrl}/v1/messages`, env.ANTHROPIC_API_KEY, HAIKU_MODEL, message);
-    }
-
-    // 4. Native CF AI Gateway (no model override — default to Anthropic Haiku)
-    if (env.CLOUDFLARE_AI_GATEWAY_API_KEY && env.CF_AI_GATEWAY_ACCOUNT_ID && env.CF_AI_GATEWAY_GATEWAY_ID) {
-      const baseUrl = `https://gateway.ai.cloudflare.com/v1/${env.CF_AI_GATEWAY_ACCOUNT_ID}/${env.CF_AI_GATEWAY_GATEWAY_ID}/anthropic`;
-      console.log('[rpc] Using native CF AI Gateway (Anthropic)');
-      return await callAnthropic(`${baseUrl}/v1/messages`, env.CLOUDFLARE_AI_GATEWAY_API_KEY, HAIKU_MODEL, message);
-    }
-
-    // 5. Direct OpenAI
-    if (env.OPENAI_API_KEY) {
-      console.log('[rpc] Using direct OpenAI');
-      return await callOpenAI('https://api.openai.com/v1/chat/completions', env.OPENAI_API_KEY, OPENAI_MINI_MODEL, message);
-    }
-
-    console.error('[rpc] No API key configured for cron briefs');
-    return { ok: false, text: 'No API key configured for cron briefs' };
-  } catch (err) {
-    console.error('[rpc] generateCronBrief failed:', err);
-    return { ok: false, text: String(err) };
-  }
+  const chain = buildProviderChain(env, message);
+  return tryProviderChain(chain);
 }
 
 /**
  * Generate an AI brief with a custom system prompt.
- * Uses the same provider selection as generateCronBrief.
+ * Tries each configured provider in priority order; falls through on failure.
  */
 export async function generateAiBrief(
   message: string,
@@ -135,40 +172,8 @@ export async function generateAiBrief(
   systemPrompt: string,
 ): Promise<{ ok: boolean; text: string }> {
   console.log(`[rpc] generateAiBrief code_version=${CRON_CODE_VERSION}`);
-  try {
-    if (env.CF_AI_GATEWAY_MODEL && env.CLOUDFLARE_AI_GATEWAY_API_KEY &&
-        env.CF_AI_GATEWAY_ACCOUNT_ID && env.CF_AI_GATEWAY_GATEWAY_ID) {
-      const raw = env.CF_AI_GATEWAY_MODEL;
-      const slashIdx = raw.indexOf('/');
-      const gwProvider = slashIdx > 0 ? raw.substring(0, slashIdx) : 'anthropic';
-      const modelId = slashIdx > 0 ? raw.substring(slashIdx + 1) : raw;
-      let gwBase = `https://gateway.ai.cloudflare.com/v1/${env.CF_AI_GATEWAY_ACCOUNT_ID}/${env.CF_AI_GATEWAY_GATEWAY_ID}/${gwProvider}`;
-      if (gwProvider === 'workers-ai') gwBase += '/v1';
-      if (gwProvider === 'anthropic') {
-        return await callAnthropic(`${gwBase}/v1/messages`, env.CLOUDFLARE_AI_GATEWAY_API_KEY, modelId, message, systemPrompt);
-      }
-      return await callOpenAI(`${gwBase}/chat/completions`, env.CLOUDFLARE_AI_GATEWAY_API_KEY, modelId, message, systemPrompt);
-    }
-    if (env.AI_GATEWAY_API_KEY && env.AI_GATEWAY_BASE_URL) {
-      const baseUrl = env.AI_GATEWAY_BASE_URL.replace(/\/+$/, '');
-      return await callAnthropic(`${baseUrl}/v1/messages`, env.AI_GATEWAY_API_KEY, HAIKU_MODEL, message, systemPrompt);
-    }
-    if (env.ANTHROPIC_API_KEY) {
-      const baseUrl = env.ANTHROPIC_BASE_URL?.replace(/\/+$/, '') || 'https://api.anthropic.com';
-      return await callAnthropic(`${baseUrl}/v1/messages`, env.ANTHROPIC_API_KEY, HAIKU_MODEL, message, systemPrompt);
-    }
-    if (env.CLOUDFLARE_AI_GATEWAY_API_KEY && env.CF_AI_GATEWAY_ACCOUNT_ID && env.CF_AI_GATEWAY_GATEWAY_ID) {
-      const baseUrl = `https://gateway.ai.cloudflare.com/v1/${env.CF_AI_GATEWAY_ACCOUNT_ID}/${env.CF_AI_GATEWAY_GATEWAY_ID}/anthropic`;
-      return await callAnthropic(`${baseUrl}/v1/messages`, env.CLOUDFLARE_AI_GATEWAY_API_KEY, HAIKU_MODEL, message, systemPrompt);
-    }
-    if (env.OPENAI_API_KEY) {
-      return await callOpenAI('https://api.openai.com/v1/chat/completions', env.OPENAI_API_KEY, OPENAI_MINI_MODEL, message, systemPrompt);
-    }
-    return { ok: false, text: 'No API key configured' };
-  } catch (err) {
-    console.error('[rpc] generateAiBrief failed:', err);
-    return { ok: false, text: String(err) };
-  }
+  const chain = buildProviderChain(env, message, systemPrompt);
+  return tryProviderChain(chain);
 }
 
 /**
