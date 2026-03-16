@@ -733,7 +733,7 @@ export default function CadencePage() {
         <button className={`cadence-tab ${activeTab === 'pipeline' ? 'active' : ''}`} onClick={() => { setActiveTab('pipeline'); setSelectedCadenceId(null); }}>
           Pipeline
         </button>
-        <button className={`cadence-tab ${activeTab === 'detail' ? 'active' : ''}`} onClick={() => setActiveTab('detail')} disabled={!selectedCadenceId}>
+        <button className={`cadence-tab ${activeTab === 'detail' ? 'active' : ''}`} onClick={() => setActiveTab('detail')}>
           Detail
         </button>
         <button className={`cadence-tab ${activeTab === 'weekly' ? 'active' : ''}`} onClick={() => { setActiveTab('weekly'); setSelectedCadenceId(null); }}>
