@@ -14,6 +14,7 @@ dashboard.get('/', async (c) => {
       todayTasks,
       inProgressTasks,
       openBlockers,
+      blockedTasks,
       upcomingDeadlines,
       recentCheckin,
       stalledProjects,
@@ -69,6 +70,15 @@ dashboard.get('/', async (c) => {
          ORDER BY CASE b.severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 END`,
       ).all(),
 
+      // Blocked tasks (tasks with status = 'blocked')
+      c.env.DB.prepare(
+        `SELECT t.*, p.name as project_name
+         FROM tasks t
+         LEFT JOIN projects p ON t.project_id = p.id
+         WHERE t.status = 'blocked'
+         ORDER BY CASE t.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 END`,
+      ).all(),
+
       // Upcoming deadlines (next 7 days)
       c.env.DB.prepare(
         `SELECT t.*, p.name as project_name,
@@ -101,7 +111,9 @@ dashboard.get('/', async (c) => {
     // Compute summary stats
     const totalActive = activeProjects.results?.length ?? 0;
     const totalOverdue = overdueTasks.results?.length ?? 0;
-    const totalBlocked = openBlockers.results?.length ?? 0;
+    const totalBlockerRecords = openBlockers.results?.length ?? 0;
+    const totalBlockedTasks = blockedTasks.results?.length ?? 0;
+    const totalBlocked = totalBlockerRecords + totalBlockedTasks;
     const criticalBlockers = (openBlockers.results ?? []).filter(
       (b: Record<string, unknown>) => b.severity === 'critical' || (b.days_open as number) >= 7,
     ).length;
@@ -116,12 +128,14 @@ dashboard.get('/', async (c) => {
         tasks_due_today: todayTasks.results?.length ?? 0,
         tasks_in_progress: inProgressTasks.results?.length ?? 0,
         stalled_projects: stalledProjects.results?.length ?? 0,
+        blocked_tasks: totalBlockedTasks,
       },
       projects: activeProjects.results,
       overdue_tasks: overdueTasks.results,
       today_tasks: todayTasks.results,
       in_progress_tasks: inProgressTasks.results,
       open_blockers: openBlockers.results,
+      blocked_tasks: blockedTasks.results,
       upcoming_deadlines: upcomingDeadlines.results,
       stalled_projects: stalledProjects.results,
       last_checkin: recentCheckin,

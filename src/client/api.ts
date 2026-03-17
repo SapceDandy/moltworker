@@ -356,6 +356,7 @@ export interface DashboardSummary {
   tasks_due_today: number;
   tasks_in_progress: number;
   stalled_projects: number;
+  blocked_tasks: number;
 }
 
 export interface DashboardResponse {
@@ -366,6 +367,7 @@ export interface DashboardResponse {
   today_tasks: Task[];
   in_progress_tasks: Task[];
   open_blockers: Blocker[];
+  blocked_tasks: Task[];
   upcoming_deadlines: Task[];
   stalled_projects: Project[];
   last_checkin: Record<string, unknown> | null;

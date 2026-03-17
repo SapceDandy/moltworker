@@ -185,6 +185,24 @@ export default function DashboardPage() {
           )}
         </section>
 
+        {/* Blocked Tasks */}
+        {(dashboard?.blocked_tasks ?? []).length > 0 && (
+          <section className="dash-section blockers-section">
+            <h3>Blocked Tasks ({dashboard?.blocked_tasks.length})</h3>
+            <div className="task-list">
+              {(dashboard?.blocked_tasks ?? []).map((t) => (
+                <Link to={t.project_id ? `/projects/${t.project_id}` : '/board'} key={t.id} className="task-row overdue">
+                  <span className="task-title">{t.title}</span>
+                  <span className="task-meta">
+                    <span className="badge badge-red">blocked</span>
+                    {t.project_name && <span className="task-project">{t.project_name}</span>}
+                  </span>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
+
         {/* Open Blockers */}
         {(dashboard?.open_blockers ?? []).length > 0 && (
           <section className="dash-section blockers-section">
