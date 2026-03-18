@@ -826,3 +826,27 @@ export async function generateCallPrep(cadenceId: string, touchId?: string): Pro
 export async function getCadenceDashboard(): Promise<CadenceDashboard> {
   return execApi('/cadence/dashboard');
 }
+
+// --- Browser Cookies ---
+
+export interface BrowserCookieEntry {
+  id: string;
+  domain: string;
+  label: string | null;
+  cookies_size: number;
+  expires_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listBrowserCookies(): Promise<{ cookies: BrowserCookieEntry[] }> {
+  return execApi('/browser/cookies');
+}
+
+export async function storeBrowserCookies(data: { domain: string; cookies: unknown[]; label?: string }): Promise<{ id: string; domain: string; cookie_count: number }> {
+  return execApi('/browser/cookies', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function deleteBrowserCookies(domain: string): Promise<{ ok: boolean }> {
+  return execApi(`/browser/cookies/${encodeURIComponent(domain)}`, { method: 'DELETE' });
+}

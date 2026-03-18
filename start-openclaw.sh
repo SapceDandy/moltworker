@@ -228,6 +228,32 @@ if (process.env.CF_AI_GATEWAY_MODEL) {
     }
 }
 
+// Browser configuration: headless Chromium for agent browser automation
+config.browser = config.browser || {};
+config.browser.enabled = true;
+config.browser.headless = true;
+config.browser.noSandbox = true;  // Required in containers (no X11/Wayland)
+// Playwright installs Chromium to PLAYWRIGHT_BROWSERS_PATH; find the binary
+const pwPath = '/root/.cache/ms-playwright';
+let chromiumBin = '';
+try {
+    const dirs = fs.readdirSync(pwPath).filter(d => d.startsWith('chromium'));
+    if (dirs.length > 0) {
+        chromiumBin = pwPath + '/' + dirs[0] + '/chrome-linux/chrome';
+        if (!fs.existsSync(chromiumBin)) {
+            // Try alternate path structure
+            chromiumBin = pwPath + '/' + dirs[0] + '/chrome-linux64/chrome';
+        }
+    }
+} catch(e) { console.warn('Could not find Playwright Chromium:', e.message); }
+if (chromiumBin) {
+    config.browser.executablePath = chromiumBin;
+    console.log('Browser: headless Chromium enabled at ' + chromiumBin);
+} else {
+    console.warn('Browser: Chromium binary not found in ' + pwPath + ', browser may not work');
+}
+config.browser.defaultProfile = 'openclaw';
+
 // Agent workspace (OpenClaw loads skills from <workspace>/skills/)
 config.agents = config.agents || {};
 config.agents.defaults = config.agents.defaults || {};

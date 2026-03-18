@@ -25,6 +25,21 @@ RUN npm install -g pnpm
 RUN npm install -g openclaw@2026.2.3 \
     && openclaw --version
 
+# Install Chromium system dependencies for headless browser automation
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
+    libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
+    libgbm1 libpango-1.0-0 libcairo2 libasound2 libatspi2.0-0 \
+    libxshmfence1 libx11-xcb1 fonts-liberation fonts-noto-color-emoji \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Playwright and Chromium for headless browser automation
+# playwright-core must be globally available for OpenClaw's advanced browser actions
+# (click, type, snapshot, PDF — without it only basic CDP ops work)
+ENV PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright
+RUN npm install -g playwright-core \
+    && npx playwright-core install chromium
+
 # Create OpenClaw directories
 # Legacy .clawdbot paths are kept for R2 backup migration
 RUN mkdir -p /root/.openclaw \
@@ -32,7 +47,7 @@ RUN mkdir -p /root/.openclaw \
     && mkdir -p /root/clawd/skills
 
 # Copy startup script — RUN echo busts Docker layer cache for all COPY layers below
-RUN echo "build-v50-gmail-drafts" > /tmp/.build-version
+RUN echo "build-v52-browser-playwright" > /tmp/.build-version
 COPY start-openclaw.sh /usr/local/bin/start-openclaw.sh
 RUN chmod +x /usr/local/bin/start-openclaw.sh
 

@@ -5,6 +5,10 @@ import {
   disconnectGoogleAccount,
   getGoogleAuthUrl,
   type GoogleAccount,
+  listBrowserCookies,
+  storeBrowserCookies,
+  deleteBrowserCookies,
+  type BrowserCookieEntry,
 } from '../api';
 import './SettingsPage.css';
 
@@ -16,15 +20,28 @@ export default function SettingsPage() {
   const [showLabelInput, setShowLabelInput] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
 
+  // Browser cookies state
+  const [cookieEntries, setCookieEntries] = useState<BrowserCookieEntry[]>([]);
+  const [showCookieForm, setShowCookieForm] = useState(false);
+  const [cookieDomain, setCookieDomain] = useState('linkedin.com');
+  const [cookieJson, setCookieJson] = useState('');
+  const [cookieLabel, setCookieLabel] = useState('');
+  const [cookieSaving, setCookieSaving] = useState(false);
+  const [cookieMsg, setCookieMsg] = useState<string | null>(null);
+
   const successMsg = searchParams.get('success');
   const errorMsg = searchParams.get('error');
 
   const load = useCallback(async () => {
     try {
-      const res = await listGoogleAccounts();
+      const [res, cookieRes] = await Promise.all([
+        listGoogleAccounts(),
+        listBrowserCookies(),
+      ]);
       setAccounts(res.accounts);
+      setCookieEntries(cookieRes.cookies);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load accounts');
+      setError(err instanceof Error ? err.message : 'Failed to load settings');
     } finally {
       setLoading(false);
     }
@@ -175,6 +192,141 @@ export default function SettingsPage() {
           ) : (
             <button className="btn btn-primary" onClick={() => setShowLabelInput(true)}>
               + Connect Google Account
+            </button>
+          )}
+        </div>
+      </section>
+
+      {/* Browser Cookies Section */}
+      <section className="settings-section">
+        <div className="section-header">
+          <div>
+            <h3>Browser Sessions</h3>
+            <p className="section-desc">
+              Import cookies from your browser to give the agent access to authenticated sessions (e.g., LinkedIn).
+              Use a browser extension like "EditThisCookie" or "Cookie-Editor" to export cookies as JSON.
+            </p>
+          </div>
+        </div>
+
+        {cookieMsg && (
+          <div className="success-banner">{cookieMsg}</div>
+        )}
+
+        {/* Stored Cookies */}
+        {cookieEntries.length > 0 && (
+          <div className="accounts-list">
+            {cookieEntries.map((entry) => (
+              <div key={entry.id} className="account-card">
+                <div className="account-info">
+                  <div className="account-primary">
+                    <span className="account-email">{entry.domain}</span>
+                    {entry.label && <span className="account-label">{entry.label}</span>}
+                    <span className="token-status valid">
+                      {Math.round(entry.cookies_size / 1024)}KB
+                    </span>
+                  </div>
+                  <div className="account-meta">
+                    Updated {new Date(entry.updated_at).toLocaleString()}
+                  </div>
+                </div>
+                <div className="account-actions">
+                  <button
+                    className="btn btn-danger btn-sm"
+                    onClick={async () => {
+                      if (!confirm(`Delete stored cookies for ${entry.domain}?`)) return;
+                      try {
+                        await deleteBrowserCookies(entry.domain);
+                        await load();
+                        setCookieMsg(`Cookies for ${entry.domain} deleted`);
+                        setTimeout(() => setCookieMsg(null), 3000);
+                      } catch (err) {
+                        setError(err instanceof Error ? err.message : 'Failed to delete');
+                      }
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Import Cookies Form */}
+        <div className="connect-section">
+          {showCookieForm ? (
+            <div className="connect-form">
+              <div className="form-group">
+                <label htmlFor="cookie-domain">Domain</label>
+                <input
+                  id="cookie-domain"
+                  placeholder="linkedin.com"
+                  value={cookieDomain}
+                  onChange={(e) => setCookieDomain(e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="cookie-label">Label (optional)</label>
+                <input
+                  id="cookie-label"
+                  placeholder="e.g., LinkedIn personal"
+                  value={cookieLabel}
+                  onChange={(e) => setCookieLabel(e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="cookie-json">Cookies JSON</label>
+                <textarea
+                  id="cookie-json"
+                  rows={8}
+                  placeholder='Paste exported cookies JSON array here...&#10;[{"name": "li_at", "value": "...", "domain": ".linkedin.com", ...}]'
+                  value={cookieJson}
+                  onChange={(e) => setCookieJson(e.target.value)}
+                  style={{ fontFamily: 'monospace', fontSize: '12px' }}
+                />
+              </div>
+              <div className="connect-actions">
+                <button
+                  className="btn btn-primary"
+                  disabled={cookieSaving || !cookieDomain || !cookieJson}
+                  onClick={async () => {
+                    setCookieSaving(true);
+                    try {
+                      const parsed = JSON.parse(cookieJson);
+                      const result = await storeBrowserCookies({
+                        domain: cookieDomain,
+                        cookies: parsed,
+                        label: cookieLabel || undefined,
+                      });
+                      setCookieMsg(`Stored ${result.cookie_count} cookies for ${cookieDomain}`);
+                      setTimeout(() => setCookieMsg(null), 5000);
+                      setShowCookieForm(false);
+                      setCookieJson('');
+                      setCookieLabel('');
+                      await load();
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : 'Invalid JSON or save failed');
+                    } finally {
+                      setCookieSaving(false);
+                    }
+                  }}
+                >
+                  {cookieSaving ? 'Saving...' : 'Import Cookies'}
+                </button>
+                <button className="btn btn-secondary" onClick={() => { setShowCookieForm(false); setCookieJson(''); setCookieLabel(''); }}>
+                  Cancel
+                </button>
+              </div>
+              <p className="connect-hint">
+                Export cookies from your browser using EditThisCookie or Cookie-Editor extension.
+                Filter to the domain (e.g., .linkedin.com) and export as JSON.
+                The agent will inject these cookies into the headless browser before navigating.
+              </p>
+            </div>
+          ) : (
+            <button className="btn btn-primary" onClick={() => setShowCookieForm(true)}>
+              + Import Browser Cookies
             </button>
           )}
         </div>

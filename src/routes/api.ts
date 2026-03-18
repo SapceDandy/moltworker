@@ -19,6 +19,7 @@ import { comments } from './comments';
 import { leads as leadsRoutes } from './leads';
 import { actions } from './actions';
 import { cadence } from './cadence';
+import { browserCookies } from './browser-cookies';
 import { morningBrief } from '../cron/morning-brief';
 
 // CLI commands can take 10-15 seconds to complete due to WebSocket connection overhead
@@ -361,6 +362,7 @@ api.route('/comments', comments);
 api.route('/leads', leadsRoutes);
 api.route('/actions', actions);
 api.route('/cadence', cadence);
+api.route('/browser/cookies', browserCookies);
 
 // Manual cron trigger for debugging (admin only)
 adminApi.post('/trigger-brief', async (c) => {
