@@ -254,6 +254,20 @@ if (chromiumBin) {
 }
 config.browser.defaultProfile = 'openclaw';
 
+// Web search: enable native web_search tool (auto-detects provider from env vars)
+// Priority: Brave > Gemini > Grok > Kimi > Perplexity > Firecrawl > Tavily
+config.tools = config.tools || {};
+config.tools.web = config.tools.web || {};
+config.tools.web.search = config.tools.web.search || {};
+config.tools.web.search.enabled = true;
+config.tools.web.search.maxResults = 10;
+config.tools.web.search.timeoutSeconds = 30;
+if (process.env.TAVILY_API_KEY) {
+    console.log('Web search: enabled (Tavily auto-detected from env)');
+} else {
+    console.log('Web search: enabled but no provider API key found — agent will not have web_search tool');
+}
+
 // Agent workspace (OpenClaw loads skills from <workspace>/skills/)
 config.agents = config.agents || {};
 config.agents.defaults = config.agents.defaults || {};
