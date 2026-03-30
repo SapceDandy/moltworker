@@ -199,9 +199,9 @@ describe('projects routes', () => {
       expect(mockD1.getAll('projects')).toHaveLength(0);
     });
 
-    it('unlinks tasks and deletes blockers/snapshots on delete', async () => {
+    it('unlinks tasks/goals and deletes milestones/blockers/snapshots on delete', async () => {
       mockD1.seed('tasks', [
-        { id: 't1', title: 'Linked task', project_id: 'p1', status: 'todo', priority: 'medium' },
+        { id: 't1', title: 'Linked task', project_id: 'p1', milestone_id: 'm1', status: 'todo', priority: 'medium' },
       ]);
       mockD1.seed('goals', [
         { id: 'g1', title: 'Linked goal', project_id: 'p1' },
@@ -221,18 +221,17 @@ describe('projects routes', () => {
 
       // Project deleted
       expect(mockD1.getAll('projects')).toHaveLength(0);
-      // Task unlinked (still exists, project_id nulled)
+      // Task unlinked (still exists, project_id and milestone_id nulled)
       const tasks = mockD1.getAll('tasks');
       expect(tasks).toHaveLength(1);
       expect(tasks[0].project_id).toBeNull();
+      expect(tasks[0].milestone_id).toBeNull();
       // Goal unlinked
       const goals = mockD1.getAll('goals');
       expect(goals).toHaveLength(1);
       expect(goals[0].project_id).toBeNull();
-      // Milestone unlinked
-      const milestones = mockD1.getAll('milestones');
-      expect(milestones).toHaveLength(1);
-      expect(milestones[0].project_id).toBeNull();
+      // Milestones deleted (project_id is NOT NULL so can't unlink)
+      expect(mockD1.getAll('milestones')).toHaveLength(0);
       // Blockers deleted
       expect(mockD1.getAll('blockers')).toHaveLength(0);
       // Snapshots deleted
