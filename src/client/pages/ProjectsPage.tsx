@@ -167,8 +167,12 @@ function ProjectDetail() {
 
   const handleDelete = async () => {
     if (!id || !confirm('Delete this project? Tasks, goals, and milestones will remain but be unlinked.')) return;
-    await deleteProject(id);
-    navigate('/projects');
+    try {
+      await deleteProject(id);
+      navigate('/projects');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete project');
+    }
   };
 
   const toggleTaskStatus = async (task: Task) => {

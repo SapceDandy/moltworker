@@ -175,6 +175,8 @@ projects.put('/:id', async (c) => {
 });
 
 // DELETE /projects/:id - Delete a project
+// Unlinks tasks/goals/milestones/reminders (sets project_id = NULL)
+// Deletes blockers and progress_snapshots tied to this project
 projects.delete('/:id', async (c) => {
   try {
     const id = c.req.param('id');
@@ -183,6 +185,17 @@ projects.delete('/:id', async (c) => {
       return c.json({ error: { code: 'NOT_FOUND', message: 'Project not found' } }, 404);
     }
 
+    // Unlink records that can live independently (set project_id to NULL)
+    await c.env.DB.prepare('UPDATE tasks SET project_id = NULL WHERE project_id = ?').bind(id).run();
+    await c.env.DB.prepare('UPDATE goals SET project_id = NULL WHERE project_id = ?').bind(id).run();
+    await c.env.DB.prepare('UPDATE milestones SET project_id = NULL WHERE project_id = ?').bind(id).run();
+    await c.env.DB.prepare('UPDATE reminders SET related_project_id = NULL WHERE related_project_id = ?').bind(id).run();
+
+    // Delete records that don't make sense without a project
+    await c.env.DB.prepare('DELETE FROM blockers WHERE project_id = ?').bind(id).run();
+    await c.env.DB.prepare('DELETE FROM progress_snapshots WHERE project_id = ?').bind(id).run();
+
+    // Delete the project itself
     await c.env.DB.prepare('DELETE FROM projects WHERE id = ?').bind(id).run();
     return c.json({ ok: true, id });
   } catch (error) {

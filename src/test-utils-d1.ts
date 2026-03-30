@@ -77,6 +77,13 @@ export function createMockD1(): MockD1 {
         if (row[whereCol] === whereVal) {
           let paramIdx = 0;
           for (const clause of setClauses) {
+            // SET col = NULL (literal)
+            const nullMatch = clause.match(/(\w+)\s*=\s*NULL/i);
+            if (nullMatch) {
+              row[nullMatch[1]] = null;
+              continue;
+            }
+            // SET col = ? (bind param)
             const col = clause.match(/(\w+)\s*=\s*\?/)?.[1];
             if (col) {
               row[col] = params[paramIdx];
