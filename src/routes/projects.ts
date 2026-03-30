@@ -185,8 +185,18 @@ projects.delete('/:id', async (c) => {
       return c.json({ error: { code: 'NOT_FOUND', message: 'Project not found' } }, 404);
     }
 
+    // Null milestone_id on ALL tasks referencing this project's milestones
+    // (tasks from other projects may reference these milestones too)
+    const { results: projMilestones } = await c.env.DB.prepare(
+      'SELECT id FROM milestones WHERE project_id = ?',
+    ).bind(id).all();
+    for (const m of projMilestones) {
+      await c.env.DB.prepare('UPDATE tasks SET milestone_id = NULL WHERE milestone_id = ?')
+        .bind((m as Record<string, unknown>).id).run();
+    }
+
     // Unlink records that can live independently (set project_id to NULL)
-    await c.env.DB.prepare('UPDATE tasks SET project_id = NULL, milestone_id = NULL WHERE project_id = ?').bind(id).run();
+    await c.env.DB.prepare('UPDATE tasks SET project_id = NULL WHERE project_id = ?').bind(id).run();
     await c.env.DB.prepare('UPDATE goals SET project_id = NULL WHERE project_id = ?').bind(id).run();
     await c.env.DB.prepare('UPDATE reminders SET related_project_id = NULL WHERE related_project_id = ?').bind(id).run();
 
