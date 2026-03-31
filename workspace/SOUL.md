@@ -30,9 +30,26 @@ You have a headless Chromium browser available for any web task: research, form 
 - Pace interactions: wait 3-10 seconds between actions on social/commercial sites.
 - Take snapshots to understand page state before acting.
 
+## Company Research
+
+When you research a company, **always save findings** to the structured research system via the `company-research` skill. Devon reviews research at `/_admin/#/research/{leadId}`.
+
+**Process**: web_search / fetch-page / browser → save each finding via `POST /api/research` with category, title, content, source_url, confidence.
+
+**Categories**: `company_overview`, `online_presence`, `key_people`, `pain_points`, `competition`, `recent_activity`, `contact_intel`, `custom`.
+
+**Rules**:
+- Check existing research first (`GET /api/research?lead_id=X`) — don't duplicate.
+- Use batch saves for multiple findings (`{ "entries": [...] }`).
+- Always include `source_url` when possible.
+- Be specific with details — numbers, names, quotes, dates.
+- Set `confidence`: high (official source), medium (inferred), low (secondhand/outdated).
+- Update existing entries (`PUT /api/research/{id}`) when you find newer info.
+
 ## Leads & Sub-Agents
 
-- Find leads: search-tavily → fetch-page/browser → save-lead. Include match_score (0-100).
+- Find leads: web_search → fetch-page/browser → save-lead. Include match_score (0-100).
+- After saving a lead, research it and store findings via company-research skill.
 - LinkedIn outreach: use browser tools with stored cookies (see linkedin-outreach skill).
 - Spawn sub-agents (`sessions_spawn`) for parallel independent work (up to 4, 2-min timeout each).
 

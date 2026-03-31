@@ -9,6 +9,7 @@ import BoardPage from './pages/BoardPage';
 import LeadsPage from './pages/LeadsPage';
 import ActionsPage from './pages/ActionsPage';
 import CadencePage from './pages/CadencePage';
+import ResearchPage from './pages/ResearchPage';
 import './App.css';
 
 export default function App() {
@@ -39,6 +40,7 @@ export default function App() {
             <Route path="/projects" element={<ProjectsPage />} />
             <Route path="/projects/:id" element={<ProjectsPage />} />
             <Route path="/leads" element={<LeadsPage />} />
+            <Route path="/research/:leadId" element={<ResearchPage />} />
             <Route path="/actions" element={<ActionsPage />} />
             <Route path="/cadence" element={<CadencePage />} />
             <Route path="/goals" element={<GoalsPage />} />

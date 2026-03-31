@@ -224,6 +224,40 @@ export function createMockD1(): MockD1 {
         }
       }
 
+      // GROUP BY with aggregate functions (COUNT, MAX)
+      const groupByMatch = rest.match(/GROUP\s+BY\s+(\w+)/i);
+      if (groupByMatch) {
+        const groupCol = groupByMatch[1];
+        const groups = new Map<unknown, Row[]>();
+        for (const row of rows) {
+          const key = row[groupCol];
+          if (!groups.has(key)) groups.set(key, []);
+          groups.get(key)!.push(row);
+        }
+        const selectCols = trimmed.match(/^SELECT\s+(.+?)\s+FROM/i)?.[1] || '';
+        const aggResults: Row[] = [];
+        for (const [key, groupRows] of groups) {
+          const agg: Row = { [groupCol]: key };
+          // COUNT(*) as alias
+          const countMatch = selectCols.match(/COUNT\s*\(\s*\*\s*\)\s+as\s+(\w+)/i);
+          if (countMatch) agg[countMatch[1]] = groupRows.length;
+          // MAX(col) as alias
+          const maxMatch = selectCols.match(/MAX\s*\(\s*(\w+)\s*\)\s+as\s+(\w+)/i);
+          if (maxMatch) {
+            const vals = groupRows.map((r) => r[maxMatch[1]]).filter((v) => v != null).map(String).sort();
+            agg[maxMatch[2]] = vals.length > 0 ? vals[vals.length - 1] : null;
+          }
+          aggResults.push(agg);
+        }
+        return { results: aggResults, changes: 0 };
+      }
+
+      // SELECT COUNT(*) as alias (without GROUP BY)
+      const countOnlyMatch = trimmed.match(/^SELECT\s+COUNT\s*\(\s*\*\s*\)\s+as\s+(\w+)\s+FROM/i);
+      if (countOnlyMatch) {
+        return { results: [{ [countOnlyMatch[1]]: rows.length }], changes: 0 };
+      }
+
       // LIMIT
       const limitMatch = rest.match(/LIMIT\s+(\?|\d+)/i);
       if (limitMatch) {

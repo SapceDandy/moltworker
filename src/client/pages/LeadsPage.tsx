@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import {
   listLeads,
   updateLead,
@@ -236,6 +237,7 @@ function LeadDetailPanel({
             </>
           ) : (
             <>
+              <Link to={`/research/${lead.id}`} className="btn-research">Research</Link>
               <button onClick={() => setEditing(true)}>Edit</button>
               <button className="btn-danger" onClick={handleDelete}>Delete</button>
             </>

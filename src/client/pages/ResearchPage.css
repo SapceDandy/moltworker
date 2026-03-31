@@ -1,0 +1,338 @@
+/* Research Page */
+.research-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.research-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.research-header h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0.25rem 0 0 0;
+}
+
+.research-subtitle {
+  font-size: 0.85rem;
+  font-weight: 400;
+  color: var(--text-muted, #94a3b8);
+  margin-left: 0.75rem;
+}
+
+.research-website {
+  font-size: 0.8rem;
+  color: var(--accent, #60a5fa);
+  text-decoration: none;
+}
+.research-website:hover { text-decoration: underline; }
+
+.research-header-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.research-total {
+  font-size: 0.8rem;
+  color: var(--text-muted, #94a3b8);
+  background: var(--surface, #1e293b);
+  padding: 0.3rem 0.6rem;
+  border-radius: 12px;
+}
+
+/* Coverage Chips */
+.research-coverage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  padding: 0.75rem;
+  background: var(--surface, #1e293b);
+  border-radius: 8px;
+}
+
+.coverage-label {
+  font-size: 0.75rem;
+  color: var(--text-muted, #94a3b8);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-right: 0.25rem;
+}
+
+.coverage-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  border: 1px solid var(--border, #334155);
+  background: transparent;
+  color: var(--text-muted, #94a3b8);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.coverage-chip:hover {
+  border-color: var(--accent, #60a5fa);
+  color: var(--text, #e2e8f0);
+}
+
+.coverage-chip.has-data {
+  border-color: #22c55e40;
+  color: var(--text, #e2e8f0);
+}
+
+.coverage-chip.active {
+  background: var(--accent, #60a5fa);
+  color: #fff;
+  border-color: var(--accent, #60a5fa);
+}
+
+.coverage-chip.no-data {
+  opacity: 0.5;
+}
+
+.chip-icon { font-size: 0.85rem; }
+
+.chip-count {
+  background: rgba(255,255,255,0.15);
+  padding: 0 0.35rem;
+  border-radius: 8px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+/* Category Section */
+.research-category {
+  background: var(--surface, #1e293b);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 0.5rem;
+}
+
+.research-category-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  user-select: none;
+  border-bottom: 1px solid var(--border, #334155);
+}
+
+.research-category-header:hover {
+  background: rgba(255,255,255,0.03);
+}
+
+.research-category-icon { font-size: 1.1rem; }
+
+.research-category-header h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0;
+  flex: 1;
+}
+
+.research-count {
+  background: var(--accent, #60a5fa);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.1rem 0.45rem;
+  border-radius: 10px;
+}
+
+.research-collapse {
+  color: var(--text-muted, #94a3b8);
+  font-size: 0.85rem;
+}
+
+/* Entries */
+.research-entries {
+  display: flex;
+  flex-direction: column;
+}
+
+.research-entry {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border, #334155);
+}
+
+.research-entry:last-child { border-bottom: none; }
+
+.research-entry-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 0.4rem;
+}
+
+.research-entry-header h4 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text, #e2e8f0);
+}
+
+.research-entry-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.7rem;
+  color: var(--text-muted, #94a3b8);
+  flex-shrink: 0;
+}
+
+.confidence-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.research-entry-content {
+  font-size: 0.85rem;
+  color: var(--text-secondary, #cbd5e1);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  margin-bottom: 0.4rem;
+}
+
+.research-source {
+  font-size: 0.75rem;
+  color: var(--accent, #60a5fa);
+  text-decoration: none;
+}
+.research-source:hover { text-decoration: underline; }
+
+.research-entry-actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.research-entry:hover .research-entry-actions {
+  opacity: 1;
+}
+
+.research-entry-actions .btn {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.4rem;
+}
+
+/* Form */
+.research-form {
+  background: var(--surface, #1e293b);
+  border-radius: 8px;
+  padding: 1rem;
+  border: 1px solid var(--border, #334155);
+}
+
+.research-form h3 {
+  margin: 0 0 0.75rem 0;
+  font-size: 1rem;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.form-field label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted, #94a3b8);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.form-field input,
+.form-field select,
+.form-field textarea {
+  background: var(--bg, #0f172a);
+  border: 1px solid var(--border, #334155);
+  border-radius: 6px;
+  padding: 0.5rem;
+  color: var(--text, #e2e8f0);
+  font-size: 0.85rem;
+}
+
+.form-field textarea {
+  resize: vertical;
+  font-family: inherit;
+}
+
+.form-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+/* Gaps */
+.research-gaps {
+  background: var(--surface, #1e293b);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  border-left: 3px solid #eab308;
+}
+
+.research-gaps h4 {
+  margin: 0 0 0.25rem 0;
+  font-size: 0.85rem;
+  color: #eab308;
+}
+
+.research-gaps p {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted, #94a3b8);
+}
+
+/* Research button in lead detail */
+.btn-research {
+  display: inline-block;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.8rem;
+  border-radius: 6px;
+  background: var(--accent, #60a5fa);
+  color: #fff;
+  text-decoration: none;
+  font-weight: 500;
+}
+.btn-research:hover {
+  opacity: 0.9;
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+  .research-header {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .research-coverage {
+    flex-wrap: wrap;
+  }
+  .chip-label {
+    display: none;
+  }
+}

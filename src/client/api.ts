@@ -839,6 +839,63 @@ export interface BrowserCookieEntry {
   updated_at: string;
 }
 
+// --- Company Research ---
+
+export const RESEARCH_CATEGORIES = [
+  { value: 'company_overview', label: 'Company Overview', icon: '🏢' },
+  { value: 'online_presence', label: 'Online Presence', icon: '🌐' },
+  { value: 'key_people', label: 'Key People', icon: '👤' },
+  { value: 'pain_points', label: 'Pain Points & Needs', icon: '🎯' },
+  { value: 'competition', label: 'Competition', icon: '⚔️' },
+  { value: 'recent_activity', label: 'Recent Activity', icon: '📰' },
+  { value: 'contact_intel', label: 'Contact Intel', icon: '📞' },
+  { value: 'custom', label: 'Custom', icon: '📝' },
+] as const;
+
+export interface ResearchEntry {
+  id: string;
+  lead_id: string;
+  category: string;
+  title: string;
+  content: string;
+  source_url: string | null;
+  source_label: string | null;
+  confidence: string;
+  gathered_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ResearchSummary {
+  category: string;
+  count: number;
+  latest: string;
+}
+
+export async function listResearch(leadId: string, category?: string): Promise<{ research: ResearchEntry[] }> {
+  const params = new URLSearchParams({ lead_id: leadId });
+  if (category) params.set('category', category);
+  return execApi(`/research?${params}`);
+}
+
+export async function getResearchSummary(leadId: string): Promise<{ summary: ResearchSummary[]; total: number }> {
+  return execApi(`/research/summary/${leadId}`);
+}
+
+export async function createResearch(data: Partial<ResearchEntry> & { lead_id: string; category: string; title: string; content: string }): Promise<{ ok: boolean; ids: string[] }> {
+  return execApi('/research', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function updateResearch(id: string, data: Partial<ResearchEntry>): Promise<{ ok: boolean; id: string }> {
+  return execApi(`/research/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+}
+
+export async function deleteResearch(id: string): Promise<{ ok: boolean; id: string }> {
+  return execApi(`/research/${id}`, { method: 'DELETE' });
+}
+
+// --- Browser Cookies ---
+
 export async function listBrowserCookies(): Promise<{ cookies: BrowserCookieEntry[] }> {
   return execApi('/browser/cookies');
 }
